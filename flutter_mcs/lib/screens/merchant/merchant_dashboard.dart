@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'reports_screen.dart';
 import '../../services/api_service.dart';
 import '../login_screen.dart';
 
@@ -92,6 +93,15 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
         backgroundColor: const Color(0xFF1565C0),
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ReportsScreen()),
+              );
+            },
+          ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
