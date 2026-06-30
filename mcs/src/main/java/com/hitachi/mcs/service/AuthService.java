@@ -72,4 +72,34 @@ public class AuthService {
             return new LoginResponse(token, "CUSTOMER", customer.getEmail());
         }
     }
+
+    public String getEmailFromToken(String token) {
+        return jwtUtil.extractEmail(token);
+    }
+
+    public String getRoleFromToken(String token) {
+        return jwtUtil.extractRole(token);
+    }
+
+    public Object getUserInfo(String email, String role) {
+        if (role.equalsIgnoreCase("MERCHANT")) {
+            Merchant merchant = merchantRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Merchant not found"));
+            return new java.util.HashMap<String, Object>() {{
+                put("id", merchant.getId());
+                put("name", merchant.getName());
+                put("email", merchant.getEmail());
+                put("role", "MERCHANT");
+            }};
+        } else {
+            Customer customer = customerRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Customer not found"));
+            return new java.util.HashMap<String, Object>() {{
+                put("id", customer.getId());
+                put("name", customer.getName());
+                put("email", customer.getEmail());
+                put("role", "CUSTOMER");
+            }};
+        }
+    }
 }

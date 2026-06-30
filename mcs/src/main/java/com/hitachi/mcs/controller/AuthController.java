@@ -29,4 +29,16 @@ public class AuthController {
         LoginResponse response = authService.login(request);
         return ResponseEntity.ok(response);
     }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String authHeader) {
+        try {
+            String token = authHeader.replace("Bearer ", "");
+            String email = authService.getEmailFromToken(token);
+            String role = authService.getRoleFromToken(token);
+            return ResponseEntity.ok(authService.getUserInfo(email, role));
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body("Invalid token");
+        }
+    }
 }

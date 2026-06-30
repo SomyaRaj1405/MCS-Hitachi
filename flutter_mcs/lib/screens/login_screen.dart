@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import '../services/api_service.dart';
 import 'merchant/merchant_dashboard.dart';
 import 'customer/customer_dashboard.dart';
 
@@ -14,6 +13,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   String _selectedRole = 'MERCHANT';
   bool _isLoading = false;
   String _error = '';
@@ -25,41 +25,54 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('http://localhost:8080/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _emailController.text.trim(),
-          'password': _passwordController.text.trim(),
-          'role': _selectedRole,
-        }),
-      );
+      final data = await ApiService.post('/auth/login', {
+        'email': _emailController.text.trim(),
+        'password': _passwordController.text.trim(),
+        'role': _selectedRole,
+      });
 
-      setState(() => _isLoading = false);
+      final token = data['token'];
+      final role = data['role'];
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (!mounted) return;
-        if (data['role'] == 'MERCHANT') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const MerchantDashboard()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const CustomerDashboard()),
-          );
-        }
+      if (token == null || token.toString().isEmpty) {
+        throw Exception('Token not received');
+      }
+
+      ApiService.setToken(token);
+      ApiService.setRole(role);
+
+      final meData = await ApiService.get('/auth/me');
+      ApiService.setUserId(meData['id']);
+
+      if (!mounted) return;
+
+      if (role == 'MERCHANT') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MerchantDashboard()),
+        );
       } else {
-        setState(() => _error = 'Invalid credentials');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const CustomerDashboard()),
+        );
       }
     } catch (e) {
       setState(() {
-        _isLoading = false;
-        _error = 'Connection error. Is the server running?';
+        _error = e.toString().replaceAll('Exception: ', '');
       });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
