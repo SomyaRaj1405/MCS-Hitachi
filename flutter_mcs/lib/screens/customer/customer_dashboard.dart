@@ -1,13 +1,217 @@
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
+import '../login_screen.dart';
 
-class CustomerDashboard extends StatelessWidget {
+class CustomerDashboard extends StatefulWidget {
   const CustomerDashboard({super.key});
+
+  @override
+  State<CustomerDashboard> createState() => _CustomerDashboardState();
+}
+
+class _CustomerDashboardState extends State<CustomerDashboard> {
+  List<dynamic> _bills = [];
+  bool _isLoading = true;
+  int? _customerId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBills();
+  }
+
+  Future<void> _loadBills() async {
+    setState(() => _isLoading = true);
+    try {
+      _customerId = ApiService.userId;
+      final data = await ApiService.get('/bills/customer/$_customerId');
+      setState(() {
+        _bills = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _logout() async {
+    await ApiService.clearSession();
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'PAID':
+        return Colors.green;
+      case 'FAILED':
+        return Colors.red;
+      default:
+        return Colors.orange;
+    }
+  }
+
+  List<dynamic> get _pendingBills =>
+      _bills.where((b) => b['status'] == 'PENDING').toList();
+  List<dynamic> get _paidBills =>
+      _bills.where((b) => b['status'] == 'PAID').toList();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Customer Dashboard')),
-      body: const Center(child: Text('Customer Dashboard')),
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        title: const Text(
+          'My Bills',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: const Color(0xFF1565C0),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadBills,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_pendingBills.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Text(
+                            'Pending bills',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${_pendingBills.length}',
+                              style: TextStyle(
+                                color: Colors.orange.shade800,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ..._pendingBills.map(
+                        (bill) => Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.orange.shade100),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.all(16),
+                            title: Text(
+                              bill['description'] ?? 'No description',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text('From ${bill['merchantName']}'),
+                            trailing: Text(
+                              '₹${bill['amount']}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onTap: () {
+                              // payment screen will go here
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    if (_paidBills.isNotEmpty) ...[
+                      const Text(
+                        'Payment history',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ..._paidBills.map(
+                        (bill) => Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.all(16),
+                            title: Text(
+                              bill['description'] ?? 'No description',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text('From ${bill['merchantName']}'),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _statusColor(
+                                  bill['status'],
+                                ).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                bill['status'],
+                                style: TextStyle(
+                                  color: _statusColor(bill['status']),
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_bills.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 60),
+                        child: Center(
+                          child: Text(
+                            'No bills yet',
+                            style: TextStyle(color: Colors.grey.shade500),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
