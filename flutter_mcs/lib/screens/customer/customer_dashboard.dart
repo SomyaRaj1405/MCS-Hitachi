@@ -1,3 +1,4 @@
+import 'payment_screen.dart';
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import '../login_screen.dart';
@@ -141,7 +142,12 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                               ),
                             ),
                             onTap: () {
-                              // payment screen will go here
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PaymentScreen(bill: bill),
+                                ),
+                              ).then((_) => _loadBills());
                             },
                           ),
                         ),
