@@ -21,8 +21,13 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     _loadBills();
   }
 
+  String? _errorMessage;
+
   Future<void> _loadBills() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     try {
       _customerId = ApiService.userId;
       final data = await ApiService.get('/bills/customer/$_customerId');
@@ -31,7 +36,10 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Could not load bills. Pull down to retry.';
+      });
     }
   }
 
@@ -77,6 +85,33 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _loadBills,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : RefreshIndicator(
               onRefresh: _loadBills,
               child: SingleChildScrollView(
