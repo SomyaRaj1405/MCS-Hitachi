@@ -1,5 +1,5 @@
 package com.hitachi.mcs.controller;
-
+import java.util.Map;
 import com.hitachi.mcs.dto.LoginRequest;
 import com.hitachi.mcs.dto.LoginResponse;
 import com.hitachi.mcs.dto.RegisterRequest;
@@ -19,9 +19,9 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<String> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<Map<String, String>> register(@Valid @RequestBody RegisterRequest request) {
         String message = authService.register(request);
-        return ResponseEntity.ok(message);
+        return ResponseEntity.ok(Map.of("message", message));
     }
 
     @PostMapping("/login")
