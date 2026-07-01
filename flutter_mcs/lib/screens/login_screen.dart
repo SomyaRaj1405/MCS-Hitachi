@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'merchant/merchant_dashboard.dart';
 import 'customer/customer_dashboard.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -46,25 +47,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      if (role == 'MERCHANT') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const MerchantDashboard()),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const CustomerDashboard()),
-        );
-      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => role == 'MERCHANT'
+              ? const MerchantDashboard()
+              : const CustomerDashboard(),
+        ),
+      );
     } catch (e) {
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
       });
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -78,39 +74,60 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE0E6EF)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.payment, size: 48, color: Color(0xFF1565C0)),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'MCS Hitachi',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+                  Container(
+                    height: 64,
+                    width: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF2FF),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(
+                      Icons.account_balance_wallet_rounded,
+                      size: 34,
+                      color: Color(0xFF1565C0),
+                    ),
                   ),
+                  const SizedBox(height: 20),
+
                   const Text(
-                    'Merchant Checkout System',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                    'Welcome back',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Sign in to manage bills, payments and reports.',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  ),
+
+                  const SizedBox(height: 28),
+
                   DropdownButtonFormField<String>(
-                    value: _selectedRole,
+                    initialValue: _selectedRole,
                     decoration: const InputDecoration(
                       labelText: 'Login as',
-                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person_outline),
                     ),
                     items: const [
                       DropdownMenuItem(
@@ -124,44 +141,76 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                     onChanged: (val) => setState(() => _selectedRole = val!),
                   ),
+
                   const SizedBox(height: 16),
+
                   TextField(
                     controller: _emailController,
                     decoration: const InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
+                      labelText: 'Email address',
+                      prefixIcon: Icon(Icons.email_outlined),
                     ),
                     keyboardType: TextInputType.emailAddress,
                   ),
+
                   const SizedBox(height: 16),
+
                   TextField(
                     controller: _passwordController,
                     decoration: const InputDecoration(
                       labelText: 'Password',
-                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.lock_outline),
                     ),
                     obscureText: true,
                   ),
-                  const SizedBox(height: 8),
-                  if (_error.isNotEmpty)
-                    Text(
-                      _error,
-                      style: const TextStyle(color: Colors.red, fontSize: 13),
-                    ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1565C0),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+
+                  if (_error.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.shade100),
+                      ),
+                      child: Text(
+                        _error,
+                        style: TextStyle(
+                          color: Colors.red.shade700,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
+                  ],
+
+                  const SizedBox(height: 22),
+
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _login,
                     child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('Login', style: TextStyle(fontSize: 16)),
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text('Login'),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const RegisterScreen(),
+                        ),
+                      );
+                    },
+                    child: const Text("Don't have an account? Register"),
                   ),
                 ],
               ),
