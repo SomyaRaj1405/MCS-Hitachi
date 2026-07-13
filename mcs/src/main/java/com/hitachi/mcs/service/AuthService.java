@@ -3,6 +3,7 @@ package com.hitachi.mcs.service;
 import com.hitachi.mcs.dto.LoginRequest;
 import com.hitachi.mcs.dto.LoginResponse;
 import com.hitachi.mcs.dto.RegisterRequest;
+import com.hitachi.mcs.dto.MerchantProfileUpdateRequest;
 import com.hitachi.mcs.entity.Customer;
 import com.hitachi.mcs.entity.Merchant;
 import com.hitachi.mcs.repository.CustomerRepository;
@@ -11,6 +12,8 @@ import com.hitachi.mcs.security.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class AuthService {
@@ -89,6 +92,7 @@ public class AuthService {
                 put("id", merchant.getId());
                 put("name", merchant.getName());
                 put("email", merchant.getEmail());
+                put("phone", merchant.getPhone() == null ? "" : merchant.getPhone());
                 put("role", "MERCHANT");
             }};
         } else {
@@ -101,5 +105,40 @@ public class AuthService {
                 put("role", "CUSTOMER");
             }};
         }
+    }
+
+    public Map<String, Object> updateMerchantProfile(
+            String currentEmail,
+            String role,
+            MerchantProfileUpdateRequest request) {
+        if (!"MERCHANT".equalsIgnoreCase(role)) {
+            throw new RuntimeException("Only merchant profiles can be updated here");
+        }
+
+        Merchant merchant = merchantRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new RuntimeException("Merchant not found"));
+        String newEmail = request.getEmail().trim().toLowerCase();
+        if (merchantRepository.existsByEmailAndIdNot(newEmail, merchant.getId())) {
+            throw new RuntimeException("Merchant email already exists");
+        }
+
+        merchant.setName(request.getName().trim());
+        merchant.setEmail(newEmail);
+        merchant.setPhone(normalizeOptional(request.getPhone()));
+        Merchant saved = merchantRepository.save(merchant);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", saved.getId());
+        response.put("name", saved.getName());
+        response.put("email", saved.getEmail());
+        response.put("phone", saved.getPhone() == null ? "" : saved.getPhone());
+        response.put("role", "MERCHANT");
+        response.put("token", jwtUtil.generateToken(saved.getEmail(), "MERCHANT"));
+        return response;
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        return value.trim();
     }
 }

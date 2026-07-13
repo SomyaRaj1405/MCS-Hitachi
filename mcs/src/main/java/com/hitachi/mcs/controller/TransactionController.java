@@ -8,6 +8,8 @@ import com.hitachi.mcs.service.TransactionService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/transactions")
 public class TransactionController {
@@ -31,6 +33,21 @@ public class TransactionController {
     @PostMapping("/settle")
     public TransactionResponse settleTransaction(@Valid @RequestBody SettleTransactionRequest request) {
         return transactionService.settleTransaction(request);
+    }
+
+    @GetMapping("/bill/{billId}")
+    public List<TransactionResponse> getTransactionsByBill(@PathVariable Long billId) {
+        return transactionService.getTransactionsByBill(billId);
+    }
+
+    @GetMapping("/merchant/{merchantId}")
+    public List<TransactionResponse> getTransactionsByMerchant(@PathVariable Long merchantId) {
+        return transactionService.getTransactionsByMerchant(merchantId);
+    }
+
+    @GetMapping("/customer/{customerId}")
+    public List<TransactionResponse> getTransactionsByCustomer(@PathVariable Long customerId) {
+        return transactionService.getTransactionsByCustomer(customerId);
     }
 
     @GetMapping("/{id}")

@@ -2,6 +2,7 @@ package com.hitachi.mcs.service;
 
 import com.hitachi.mcs.dto.BillRequest;
 import com.hitachi.mcs.dto.BillResponse;
+import com.hitachi.mcs.dto.RefundRequest;
 import com.hitachi.mcs.entity.Bill;
 import com.hitachi.mcs.entity.Customer;
 import com.hitachi.mcs.entity.Merchant;
@@ -10,6 +11,11 @@ import com.hitachi.mcs.repository.CustomerRepository;
 import com.hitachi.mcs.repository.MerchantRepository;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
@@ -18,6 +24,9 @@ public class BillService {
     private final BillRepository billRepository;
     private final MerchantRepository merchantRepository;
     private final CustomerRepository customerRepository;
+
+    private static final DateTimeFormatter CSV_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public BillService(BillRepository billRepository,
                        MerchantRepository merchantRepository,
@@ -66,6 +75,70 @@ public class BillService {
                 .toList();
     }
 
+    // ---------- NEW: refund ----------
+
+    /**
+     * Marks a bill as REFUNDED. Only bills currently in PAID status are
+     * eligible — this prevents refunding a bill that's still pending
+     * (nothing was collected yet) or one that's already been refunded.
+     */
+    public BillResponse refundBill(Long billId, RefundRequest request) {
+        Bill bill = billRepository.findById(billId)
+                .orElseThrow(() -> new RuntimeException("Bill not found"));
+
+        if (!"PAID".equalsIgnoreCase(bill.getStatus())) {
+            throw new IllegalStateException(
+                    "Only paid bills can be refunded. Current status: " + bill.getStatus());
+        }
+
+        bill.setStatus("REFUNDED");
+        bill.setRefundedAt(LocalDateTime.now());
+        if (request != null && request.getReason() != null && !request.getReason().isBlank()) {
+            bill.setRefundReason(request.getReason().trim());
+        }
+
+        Bill saved = billRepository.save(bill);
+        return mapToResponse(saved);
+    }
+
+    // ---------- NEW: CSV report ----------
+
+    /**
+     * Builds a CSV of all bills for a merchant. Returned as raw bytes so
+     * the controller can stream it back with a file download header.
+     */
+    public byte[] generateMerchantReportCsv(Long merchantId) {
+        List<Bill> bills = billRepository.findByMerchantId(merchantId);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (PrintWriter writer = new PrintWriter(out, true, StandardCharsets.UTF_8)) {
+            writer.println("Bill ID,Customer,Amount,Status,Payment Method,Description,Created At,Refunded At");
+
+            for (Bill bill : bills) {
+                writer.println(String.join(",",
+                        String.valueOf(bill.getId()),
+                        csvEscape(bill.getCustomer().getName()),
+                        bill.getAmount().toPlainString(),
+                        csvEscape(bill.getStatus()),
+                        csvEscape(bill.getPaymentMethod() != null ? bill.getPaymentMethod() : "N/A"),
+                        csvEscape(bill.getDescription() != null ? bill.getDescription() : ""),
+                        bill.getCreatedAt() != null ? bill.getCreatedAt().format(CSV_DATE_FORMAT) : "",
+                        bill.getRefundedAt() != null ? bill.getRefundedAt().format(CSV_DATE_FORMAT) : ""
+                ));
+            }
+        }
+
+        return out.toByteArray();
+    }
+
+    private String csvEscape(String value) {
+        if (value == null) return "";
+        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
+    }
+
     private BillResponse mapToResponse(Bill bill) {
         BillResponse response = new BillResponse();
 
@@ -77,6 +150,9 @@ public class BillService {
         response.setAmount(bill.getAmount());
         response.setDescription(bill.getDescription());
         response.setStatus(bill.getStatus());
+        response.setPaymentMethod(bill.getPaymentMethod());
+        response.setRefundReason(bill.getRefundReason());
+        response.setRefundedAt(bill.getRefundedAt());
         response.setCreatedAt(bill.getCreatedAt());
         response.setUpdatedAt(bill.getUpdatedAt());
 

@@ -3,6 +3,7 @@ import java.util.Map;
 import com.hitachi.mcs.dto.LoginRequest;
 import com.hitachi.mcs.dto.LoginResponse;
 import com.hitachi.mcs.dto.RegisterRequest;
+import com.hitachi.mcs.dto.MerchantProfileUpdateRequest;
 import com.hitachi.mcs.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -40,5 +41,15 @@ public class AuthController {
         } catch (Exception e) {
             return ResponseEntity.status(401).body("Invalid token");
         }
+    }
+
+    @PutMapping("/me")
+    public ResponseEntity<?> updateCurrentMerchant(
+            @RequestHeader("Authorization") String authHeader,
+            @Valid @RequestBody MerchantProfileUpdateRequest request) {
+        String token = authHeader.replace("Bearer ", "");
+        String email = authService.getEmailFromToken(token);
+        String role = authService.getRoleFromToken(token);
+        return ResponseEntity.ok(authService.updateMerchantProfile(email, role, request));
     }
 }

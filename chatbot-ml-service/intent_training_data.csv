@@ -1,0 +1,119 @@
+text,intent
+show me my transactions,transaction_query
+what are my recent transactions,transaction_query
+list all failed transactions this week,transaction_query
+how many transactions did I process today,transaction_query
+show transactions from yesterday,transaction_query
+what is the status of transaction TXN12345,transaction_query
+show me pending transactions,transaction_query
+give me a list of successful payments this month,transaction_query
+how much did I earn today,transaction_query
+show my transaction history for last 7 days,transaction_query
+what was my highest transaction amount this week,transaction_query
+did the payment from customer John go through,transaction_query
+show me all declined transactions,transaction_query
+list transactions above 5000 rupees,transaction_query
+how many transactions failed due to insufficient funds,transaction_query
+show me transactions between 1st and 15th of this month,transaction_query
+what's my total transaction volume today,transaction_query
+show recent card payments,transaction_query
+give me details of my last transaction,transaction_query
+show all UPI transactions today,transaction_query
+can you list transactions filtered by status success,transaction_query
+show me chargebacks this month,transaction_query
+what transactions happened in the last hour,transaction_query
+show me transaction TXN98765 details,transaction_query
+list all transactions above 10000,transaction_query
+download my transaction report for this month,report_request
+generate a report of all my sales this week,report_request
+I need a PDF report of my transactions,report_request
+export my transaction data as CSV,report_request
+can you create a monthly summary report,report_request
+give me a report of failed transactions,report_request
+I want a report for the last quarter,report_request
+download report for June,report_request
+generate revenue report for this month,report_request
+export all successful transactions to excel,report_request
+create a report showing daily transaction totals,report_request
+I need a report for my accountant,report_request
+download a summary of today's transactions,report_request
+generate a settlement report,report_request
+can I get a report broken down by payment method,report_request
+export a report for tax filing,report_request
+give me a downloadable report of chargebacks,report_request
+generate report comparing this month vs last month,report_request
+download my reconciliation report,report_request
+export refund report for this week,report_request
+how do I request a refund,refund_help
+what is the refund policy,refund_help
+how long does a refund take,refund_help
+I need to refund a customer,refund_help
+can I cancel a refund once initiated,refund_help
+what happens if a refund fails,refund_help
+how do partial refunds work,refund_help
+is there a fee for processing refunds,refund_help
+how do I check refund status,refund_help
+why is my refund still pending,refund_help
+can a refund be reversed,refund_help
+what is the maximum refund window,refund_help
+how do I issue a refund for a specific transaction,refund_help
+does the customer get notified about refunds,refund_help
+what documentation is needed to process a refund,refund_help
+how do I dispute a refund,refund_help
+can refunds be automated,refund_help
+what is the difference between refund and chargeback,refund_help
+how do I update my merchant profile,account_info
+what is my current account balance,account_info
+how do I change my registered email,account_info
+what is my merchant ID,account_info
+how do I reset my password,account_info
+where can I see my KYC status,account_info
+how do I add a new bank account,account_info
+what is my current settlement cycle,account_info
+how do I update my business address,account_info
+can I add another user to my account,account_info
+what permissions does my role have,account_info
+how do I enable two factor authentication,account_info
+where do I find my API keys,account_info
+how do I change my account tier,account_info
+what documents do I need to verify my account,account_info
+how do I view my account activity log,account_info
+what is my current subscription plan,account_info
+how do I deactivate my account,account_info
+what are your transaction fees,general_faq
+how does the payment gateway work,general_faq
+what payment methods do you support,general_faq
+is this platform PCI DSS compliant,general_faq
+what is the settlement time,general_faq
+how secure is this platform,general_faq
+do you support international payments,general_faq
+what currencies are supported,general_faq
+how do I integrate the API,general_faq
+what is a payment gateway,general_faq
+how does fraud detection work,general_faq
+what is the difference between a merchant and customer account,general_faq
+can you explain how webhooks work,general_faq
+what is 3D secure authentication,general_faq
+how does tokenization protect card data,general_faq
+what happens if the payment gateway goes down,general_faq
+how do I contact support,general_faq
+what is the difference between authorization and capture,general_faq
+do you charge setup fees,general_faq
+hi,greeting
+hello,greeting
+hey there,greeting
+good morning,greeting
+good evening,greeting
+hi there,greeting
+"hello, how are you",greeting
+"hey, need some help",greeting
+thanks,greeting
+thank you,greeting
+bye,greeting
+see you later,greeting
+ok thanks a lot,greeting
+who are you,greeting
+what can you help me with,greeting
+what can you do,greeting
+help,greeting
+I need assistance,greeting

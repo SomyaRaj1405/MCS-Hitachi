@@ -14,6 +14,9 @@ public class BillResponse {
     private BigDecimal amount;
     private String description;
     private String status;
+    private String paymentMethod;
+    private String refundReason;
+    private LocalDateTime refundedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

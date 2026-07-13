@@ -31,6 +31,18 @@ public class Bill {
     @Column(length = 20)
     private String status = "PENDING";
 
+    // NEW - refund feature
+    @Column(name = "payment_method", length = 50)
+    private String paymentMethod;
+
+    // NEW - refund feature
+    @Column(name = "refund_reason", length = 255)
+    private String refundReason;
+
+    // NEW - refund feature
+    @Column(name = "refunded_at")
+    private LocalDateTime refundedAt;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

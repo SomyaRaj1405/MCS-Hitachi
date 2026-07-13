@@ -30,7 +30,10 @@ CREATE TABLE bills (
     amount DECIMAL(10,2) NOT NULL,
     description VARCHAR(255),
     status VARCHAR(20) DEFAULT 'PENDING' 
-        CHECK (status IN ('PENDING', 'PAID', 'FAILED')),
+        CHECK (status IN ('PENDING', 'PAID', 'FAILED', 'REFUNDED')),
+    payment_method VARCHAR(50),
+    refund_reason VARCHAR(255),
+    refunded_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
     CONSTRAINT fk_merchant FOREIGN KEY (merchant_id) 

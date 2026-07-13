@@ -7,6 +7,8 @@ class ApiService {
   static String? _token;
   static String? _role;
   static int? _userId;
+  static String? _userEmail;
+  static String? _userName;
 
   static void setToken(String token) {
     _token = token;
@@ -20,13 +22,22 @@ class ApiService {
     _userId = id;
   }
 
+  static void setUserProfile({String? email, String? name}) {
+    _userEmail = email;
+    _userName = name;
+  }
+
   static String? get role => _role;
   static int? get userId => _userId;
+  static String? get userEmail => _userEmail;
+  static String? get userName => _userName;
 
   static Future<void> clearSession() async {
     _token = null;
     _role = null;
     _userId = null;
+    _userEmail = null;
+    _userName = null;
   }
 
   static Map<String, String> _headers() {
@@ -50,6 +61,15 @@ class ApiService {
     Map<String, dynamic> body,
   ) async {
     final response = await http.post(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: _headers(),
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
+    final response = await http.put(
       Uri.parse('$baseUrl$endpoint'),
       headers: _headers(),
       body: jsonEncode(body),

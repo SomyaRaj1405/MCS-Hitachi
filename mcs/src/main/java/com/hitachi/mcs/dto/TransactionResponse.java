@@ -8,7 +8,12 @@ import java.time.LocalDateTime;
 public class TransactionResponse {
     private Long id;
     private Long billId;
+    private Long merchantId;
+    private String merchantName;
+    private Long customerId;
+    private String customerName;
     private BigDecimal amount;
+    private String description;
     private String paymentMethod;
     private String status;
     private String billStatus;

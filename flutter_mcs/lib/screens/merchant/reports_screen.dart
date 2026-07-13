@@ -1,5 +1,9 @@
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
+
+import '../../core/theme/app_theme.dart';
 import '../../services/api_service.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -10,15 +14,10 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
-  Map<String, dynamic>? _dailyData;
-  Map<String, dynamic>? _weeklyData;
   bool _isLoading = true;
-  bool _showWeekly = false;
-
-  static const Color primary = Color(0xFF1565C0);
-  static const Color primaryDark = Color(0xFF0D47A1);
-  static const Color bg = Color(0xFFF4F7FB);
-  static const Color border = Color(0xFFE5EAF2);
+  String? _errorMessage;
+  Map<String, dynamic>? _dailyReport;
+  Map<String, dynamic>? _weeklyReport;
 
   @override
   void initState() {
@@ -27,7 +26,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Future<void> _loadReports() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       final merchantId = ApiService.userId;
       final daily = await ApiService.get(
@@ -36,339 +39,166 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final weekly = await ApiService.get(
         '/reports/weekly?merchantId=$merchantId',
       );
+
       setState(() {
-        _dailyData = daily;
-        _weeklyData = weekly;
+        _dailyReport = Map<String, dynamic>.from(daily);
+        _weeklyReport = Map<String, dynamic>.from(weekly);
         _isLoading = false;
       });
-    } catch (e) {
-      setState(() => _isLoading = false);
+    } catch (_) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Could not load reports. Try again.';
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final data = _showWeekly ? _weeklyData : _dailyData;
-
     return Scaffold(
-      backgroundColor: bg,
-      appBar: AppBar(
-        title: const Text(
-          'Reports',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        backgroundColor: primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
+      backgroundColor: AppColors.background,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: primary))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.brandRed),
+            )
+          : _errorMessage != null
+          ? _errorState()
           : RefreshIndicator(
+              color: AppColors.brandRed,
               onRefresh: _loadReports,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _periodToggle(),
-                    const SizedBox(height: 18),
-                    if (data != null) ...[
-                      _revenueHero(data),
-                      const SizedBox(height: 18),
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 1.5,
+                padding: const EdgeInsets.all(32),
+                child: AppFadeIn(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _header(),
+                      const SizedBox(height: AppSpacing.lg),
+                      _summaryRow(),
+                      const SizedBox(height: AppSpacing.lg),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _statCard(
-                            icon: Icons.task_alt_rounded,
-                            label: 'Settled transactions',
-                            value: '${data['totalSettledTransactions'] ?? 0}',
-                            color: Colors.indigo,
-                          ),
-                          _statCard(
-                            icon: Icons.calendar_today_rounded,
-                            label: 'Period',
-                            value: '${data['period'] ?? '-'}',
-                            color: Colors.purple,
-                          ),
-                          _statCard(
-                            icon: Icons.storefront_rounded,
-                            label: 'Merchant',
-                            value: '${data['merchantName'] ?? '-'}',
-                            color: Colors.teal,
-                          ),
-                          _statCard(
-                            icon: Icons.trending_up_rounded,
-                            label: 'Revenue',
-                            value: '₹${data['totalRevenue'] ?? 0}',
-                            color: primary,
-                          ),
+                          Expanded(flex: 2, child: _revenuePanel()),
+                          const SizedBox(width: AppSpacing.lg),
+                          Expanded(child: _reportTable()),
                         ],
-                      ),
-                      const SizedBox(height: 24),
-                      _chartCard(data),
-                    ] else
-                      _emptyState(),
-                  ],
-                ),
-              ),
-            ),
-    );
-  }
-
-  Widget _periodToggle() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        children: [
-          Expanded(child: _toggleOption('Daily', !_showWeekly)),
-          Expanded(child: _toggleOption('Weekly', _showWeekly)),
-        ],
-      ),
-    );
-  }
-
-  Widget _toggleOption(String label, bool isActive) {
-    return GestureDetector(
-      onTap: () => setState(() => _showWeekly = label == 'Weekly'),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: isActive ? primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: isActive ? Colors.white : Colors.grey.shade600,
-            fontWeight: FontWeight.w800,
-            fontSize: 13.5,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _revenueHero(Map<String, dynamic> data) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [primary, primaryDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: primary.withValues(alpha: 0.18),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _showWeekly ? 'Revenue this week' : 'Revenue today',
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '₹${data['totalRevenue'] ?? 0}',
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              const Icon(
-                Icons.task_alt_rounded,
-                size: 14,
-                color: Colors.white70,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${data['totalSettledTransactions'] ?? 0} settled transactions',
-                style: const TextStyle(color: Colors.white70, fontSize: 12.5),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            height: 30,
-            width: 30,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(icon, color: color, size: 16),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: Colors.black87,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _chartCard(Map<String, dynamic> data) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 20, 20, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Revenue overview',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: BarChart(
-              BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: ((data['totalRevenue'] ?? 100) as num).toDouble() * 1.2,
-                barTouchData: BarTouchData(
-                  enabled: true,
-                  touchTooltipData: BarTouchTooltipData(
-                    getTooltipColor: (_) => primaryDark,
-                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                      return BarTooltipItem(
-                        '₹${rod.toY.toStringAsFixed(0)}',
-                        const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            _showWeekly ? 'This week' : 'Today',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 44,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          '₹${value.toInt()}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey.shade500,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                ),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval:
-                      ((data['totalRevenue'] ?? 100) as num).toDouble() / 4,
-                  getDrawingHorizontalLine: (value) =>
-                      FlLine(color: border, strokeWidth: 1),
-                ),
-                borderData: FlBorderData(show: false),
-                barGroups: [
-                  BarChartGroupData(
-                    x: 0,
-                    barRods: [
-                      BarChartRodData(
-                        toY: ((data['totalRevenue'] ?? 0) as num).toDouble(),
-                        gradient: const LinearGradient(
-                          colors: [primary, primaryDark],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
-                        width: 44,
-                        borderRadius: BorderRadius.circular(8),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
+            ),
+    );
+  }
+
+  Widget _header() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Reports Dashboard', style: AppTextStyles.heading),
+              const SizedBox(height: 4),
+              Text(
+                'Daily and weekly settlement summaries from live report APIs.',
+                style: AppTextStyles.bodySecondary,
+              ),
+            ],
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: () =>
+              _showMessage('Report export is not part of the backend API yet.'),
+          icon: const Icon(Icons.download_rounded, size: 18),
+          label: const Text('Export Report'),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: _summaryCard(
+            icon: Icons.today_rounded,
+            title: 'Daily Revenue',
+            value: _money(_amount(_dailyReport, 'totalRevenue')),
+            caption: '${_count(_dailyReport)} settled today',
+            color: AppColors.brandRed,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _summaryCard(
+            icon: Icons.calendar_view_week_rounded,
+            title: 'Weekly Revenue',
+            value: _money(_amount(_weeklyReport, 'totalRevenue')),
+            caption: '${_count(_weeklyReport)} settled this week',
+            color: AppColors.success,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _summaryCard(
+            icon: Icons.storefront_rounded,
+            title: 'Merchant',
+            value: _merchantName(),
+            caption: 'ID ${ApiService.userId ?? '-'}',
+            color: const Color(0xFF1565D8),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required String caption,
+    required Color color,
+  }) {
+    return Container(
+      height: 128,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: AppShadows.soft,
+        border: Border(top: BorderSide(color: color, width: 3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(title, style: AppTextStyles.caption),
+                const SizedBox(height: 8),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.heading.copyWith(fontSize: 22),
+                ),
+                const SizedBox(height: 2),
+                Text(caption, style: AppTextStyles.caption),
+              ],
             ),
           ),
         ],
@@ -376,31 +206,223 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _emptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 46, horizontal: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: border),
+  Widget _revenuePanel() {
+    final daily = _amount(_dailyReport, 'totalRevenue');
+    final weekly = _amount(_weeklyReport, 'totalRevenue');
+    final maxY = math.max(1.0, math.max(daily, weekly));
+
+    return _panel(
+      title: 'Revenue Summary',
+      child: SizedBox(
+        height: 320,
+        child: BarChart(
+          BarChartData(
+            minY: 0,
+            maxY: maxY * 1.25,
+            gridData: FlGridData(
+              drawVerticalLine: false,
+              getDrawingHorizontalLine: (_) =>
+                  const FlLine(color: AppColors.divider, strokeWidth: 1),
+            ),
+            borderData: FlBorderData(show: false),
+            titlesData: FlTitlesData(
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 48,
+                  getTitlesWidget: (value, _) =>
+                      Text(_compactMoney(value), style: AppTextStyles.caption),
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  getTitlesWidget: (value, _) {
+                    final labels = ['Daily', 'Weekly'];
+                    final index = value.toInt();
+                    if (index < 0 || index >= labels.length) {
+                      return const SizedBox();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(labels[index], style: AppTextStyles.caption),
+                    );
+                  },
+                ),
+              ),
+            ),
+            barGroups: [
+              _barGroup(0, daily, AppColors.brandRed, maxY),
+              _barGroup(1, weekly, AppColors.success, maxY),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  BarChartGroupData _barGroup(int x, double value, Color color, double maxY) {
+    return BarChartGroupData(
+      x: x,
+      barRods: [
+        BarChartRodData(
+          toY: value,
+          width: 34,
+          color: color,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          backDrawRodData: BackgroundBarChartRodData(
+            show: true,
+            toY: maxY * 1.25,
+            color: AppColors.background,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reportTable() {
+    return _panel(
+      title: 'Settlement Reports',
       child: Column(
         children: [
-          Icon(Icons.bar_chart_rounded, size: 46, color: Colors.grey.shade400),
-          const SizedBox(height: 12),
-          const Text(
-            'No report data',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          _reportRow('Daily', _dailyReport),
+          _reportRow('Weekly', _weeklyReport),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportRow(String label, Map<String, dynamic>? report) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: AppTextStyles.body.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '${_count(report)} settled transactions',
+                  style: AppTextStyles.caption,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 4),
           Text(
-            'Pull down to refresh once transactions are settled.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600),
+            _money(_amount(report, 'totalRevenue')),
+            style: AppTextStyles.cardTitle.copyWith(color: AppColors.success),
           ),
         ],
       ),
     );
+  }
+
+  Widget _panel({required String title, required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTextStyles.sectionTitle),
+          const SizedBox(height: AppSpacing.lg),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _errorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 48,
+            color: AppColors.textMuted,
+          ),
+          const SizedBox(height: 12),
+          Text(_errorMessage!, style: AppTextStyles.bodySecondary),
+          const SizedBox(height: 16),
+          ElevatedButton(onPressed: _loadReports, child: const Text('Retry')),
+        ],
+      ),
+    );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  String _merchantName() {
+    final dailyName = _dailyReport?['merchantName']?.toString();
+    if (dailyName != null &&
+        dailyName.isNotEmpty &&
+        dailyName != 'No settled transactions found') {
+      return dailyName;
+    }
+
+    final weeklyName = _weeklyReport?['merchantName']?.toString();
+    if (weeklyName != null &&
+        weeklyName.isNotEmpty &&
+        weeklyName != 'No settled transactions found') {
+      return weeklyName;
+    }
+
+    return ApiService.userName ?? 'Merchant';
+  }
+
+  int _count(Map<String, dynamic>? report) {
+    final value = report?['totalSettledTransactions'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _amount(Map<String, dynamic>? report, String key) {
+    final value = report?[key];
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _money(double value) {
+    final rounded = value.round().toString();
+    final chars = rounded.split('').reversed.toList();
+    final buffer = StringBuffer();
+
+    for (var i = 0; i < chars.length; i++) {
+      if (i == 3 || (i > 3 && (i - 3) % 2 == 0)) buffer.write(',');
+      buffer.write(chars[i]);
+    }
+
+    return '\u20B9${buffer.toString().split('').reversed.join()}';
+  }
+
+  String _compactMoney(double value) {
+    if (value >= 100000) return '\u20B9${(value / 100000).toStringAsFixed(1)}L';
+    if (value >= 1000) return '\u20B9${(value / 1000).toStringAsFixed(0)}K';
+    return '\u20B9${value.toStringAsFixed(0)}';
   }
 }

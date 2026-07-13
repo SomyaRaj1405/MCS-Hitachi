@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_colors.dart';
 import '../../services/api_service.dart';
 
 class CreateBillScreen extends StatefulWidget {
@@ -11,17 +12,14 @@ class CreateBillScreen extends StatefulWidget {
 class _CreateBillScreenState extends State<CreateBillScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _merchantIdController = TextEditingController(text: '3');
+  final _merchantIdController = TextEditingController(
+    text: ApiService.userId?.toString() ?? '',
+  );
   final _customerIdController = TextEditingController();
   final _amountController = TextEditingController();
   final _descriptionController = TextEditingController();
 
   bool _isLoading = false;
-
-  static const Color primary = Color(0xFF1565C0);
-  static const Color primaryDark = Color(0xFF0D47A1);
-  static const Color bg = Color(0xFFF4F7FB);
-  static const Color border = Color(0xFFE5EAF2);
 
   Future<void> _createBill() async {
     if (!_formKey.currentState!.validate()) return;
@@ -41,10 +39,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Bill created successfully'),
-          backgroundColor: primaryDark,
+          backgroundColor: AppColors.primaryRed,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       );
@@ -54,10 +52,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: const Color(0xFFC62828),
+          backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       );
@@ -75,266 +73,233 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     super.dispose();
   }
 
-  InputDecoration _fieldDecoration(
-    String label,
-    IconData icon, {
-    String? prefixText,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon, size: 20, color: Colors.grey.shade500),
-      prefixText: prefixText,
-      prefixStyle: const TextStyle(
-        color: Colors.black87,
-        fontWeight: FontWeight.w700,
-        fontSize: 15,
-      ),
-      filled: true,
-      fillColor: bg,
-      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: border),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: primary, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFC62828)),
-      ),
-    );
+  String? _requiredNumber(String? value, String message) {
+    if (value == null || value.trim().isEmpty) return message;
+    if (int.tryParse(value.trim()) == null) return 'Enter a valid number';
+    return null;
+  }
+
+  String? _amountValidator(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Amount is required';
+
+    final amount = double.tryParse(value.trim());
+    if (amount == null || amount <= 0) return 'Enter a valid amount';
+
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: bg,
-      appBar: AppBar(
-        title: const Text(
-          'Create Bill',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        backgroundColor: primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _headerCard(),
-                  const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Bill details',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: _merchantIdController,
-                                keyboardType: TextInputType.number,
-                                decoration: _fieldDecoration(
-                                  'Merchant ID',
-                                  Icons.storefront_rounded,
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Required';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: _customerIdController,
-                                keyboardType: TextInputType.number,
-                                decoration: _fieldDecoration(
-                                  'Customer ID',
-                                  Icons.person_outline_rounded,
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Required';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _amountController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: _fieldDecoration(
-                            'Amount',
-                            Icons.currency_rupee_rounded,
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Amount is required';
-                            }
-                            final amount = double.tryParse(value);
-                            if (amount == null || amount <= 0) {
-                              return 'Enter valid amount';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _descriptionController,
-                          maxLines: 3,
-                          decoration: _fieldDecoration(
-                            'Description',
-                            Icons.description_outlined,
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Description is required';
-                            }
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  _createButton(),
-                ],
-              ),
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.90;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Container(
+        width: 620,
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 42,
+              offset: const Offset(0, 18),
             ),
+          ],
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 20, 14, 20),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFFFF1F3), Colors.white],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      height: 48,
+                      width: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryRed,
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(
+                        Icons.receipt_long_rounded,
+                        color: Colors.white,
+                        size: 25,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Create a new bill',
+                            style: TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Send a secure payment request to a customer.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () => Navigator.pop(context, false),
+                      tooltip: 'Close',
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: AppColors.border),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: _formCard(),
+                ),
+              ),
+              Divider(height: 1, color: AppColors.border),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'The customer will see this bill in their dashboard.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 18),
+                    TextButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _createBill,
+                      icon: _isLoading
+                          ? const SizedBox.square(
+                              dimension: 17,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.add_rounded, size: 19),
+                      label: Text(_isLoading ? 'Creating...' : 'Create Bill'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _headerCard() {
+  Widget _formCard() {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [primary, primaryDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: primary.withValues(alpha: 0.18),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            height: 46,
-            width: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.receipt_long_rounded,
-              color: Colors.white,
-              size: 24,
+          const Text(
+            'Bill details',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'New Bill',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Fill in the details to bill a customer',
-                  style: TextStyle(color: Colors.white70, fontSize: 12.5),
-                ),
-              ],
+          const SizedBox(height: 18),
+
+          TextFormField(
+            controller: _merchantIdController,
+            keyboardType: TextInputType.number,
+            readOnly: true,
+            decoration: const InputDecoration(
+              labelText: 'Merchant ID',
+              prefixIcon: Icon(Icons.storefront_rounded),
             ),
+            validator: (value) =>
+                _requiredNumber(value, 'Merchant ID required'),
+          ),
+
+          const SizedBox(height: 16),
+
+          TextFormField(
+            controller: _customerIdController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Customer ID',
+              prefixIcon: Icon(Icons.person_outline_rounded),
+            ),
+            validator: (value) =>
+                _requiredNumber(value, 'Customer ID required'),
+          ),
+
+          const SizedBox(height: 16),
+
+          TextFormField(
+            controller: _amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Amount',
+              prefixIcon: Icon(Icons.currency_rupee_rounded),
+            ),
+            validator: _amountValidator,
+          ),
+
+          const SizedBox(height: 16),
+
+          TextFormField(
+            controller: _descriptionController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Description',
+              prefixIcon: Icon(Icons.description_outlined),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Description is required';
+              }
+              return null;
+            },
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _createButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _createBill,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: primary,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2.5,
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Icon(Icons.add_rounded, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Create Bill',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                  ),
-                ],
-              ),
       ),
     );
   }
