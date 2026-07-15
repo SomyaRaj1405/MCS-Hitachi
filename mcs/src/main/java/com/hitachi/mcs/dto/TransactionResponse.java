@@ -17,6 +17,10 @@ public class TransactionResponse {
     private String paymentMethod;
     private String status;
     private String billStatus;
+    private String settlementReference;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime initiatedAt;
+    private LocalDateTime authorizedAt;
+    private LocalDateTime settledAt;
 }

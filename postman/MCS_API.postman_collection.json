@@ -1,0 +1,263 @@
+{
+  "info": {
+    "_postman_id": "0d30cfb1-6bc6-4b4b-a5e0-35d290cc9c50",
+    "name": "MCS Hitachi Payments - BRD API Acceptance",
+    "description": "End-to-end merchant checkout flow: registration, JWT authentication, bill creation, customer payment lifecycle, refunds, customer directory and reports. Requests are ordered and automatically chain IDs/tokens. Every executed request enforces the BRD two-second response target.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response time is below 2 seconds', function () {",
+          "  pm.expect(pm.response.responseTime).to.be.below(2000);",
+          "});",
+          "pm.test('No server error', function () {",
+          "  pm.expect(pm.response.code).to.be.below(500);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "password", "value": "McsDemo123" },
+    { "key": "merchantEmail", "value": "" },
+    { "key": "customerEmail", "value": "" },
+    { "key": "merchantToken", "value": "" },
+    { "key": "customerToken", "value": "" },
+    { "key": "merchantId", "value": "" },
+    { "key": "customerId", "value": "" },
+    { "key": "billId", "value": "" },
+    { "key": "transactionId", "value": "" },
+    { "key": "transactionAuthorized", "value": "false" }
+  ],
+  "item": [
+    {
+      "name": "01 - Authentication and Profiles",
+      "item": [
+        {
+          "name": "Register merchant",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const stamp = Date.now();",
+                  "pm.collectionVariables.set('merchantEmail', `merchant.${stamp}@mcs.test`);",
+                  "pm.collectionVariables.set('customerEmail', `customer.${stamp}@mcs.test`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('Merchant registered', () => pm.response.to.have.status(200));"], "type": "text/javascript" }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"MCS Merchant Owner\",\n  \"email\": \"{{merchantEmail}}\",\n  \"businessName\": \"MCS Acceptance Store\",\n  \"password\": \"{{password}}\",\n  \"phone\": \"9876543210\",\n  \"role\": \"MERCHANT\"\n}" },
+            "url": "{{baseUrl}}/auth/register"
+          }
+        },
+        {
+          "name": "Login merchant",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Merchant login succeeds', () => pm.response.to.have.status(200));",
+                "const loginPayload = pm.response.json();",
+                "pm.collectionVariables.set('merchantToken', loginPayload.token);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{merchantEmail}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"MERCHANT\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Get merchant profile",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Merchant profile returned', () => pm.response.to.have.status(200));",
+                "pm.collectionVariables.set('merchantId', pm.response.json().id);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/auth/me" }
+        },
+        {
+          "name": "Register customer",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer registered', () => pm.response.to.have.status(200));"], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"MCS Customer\",\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{password}}\",\n  \"phone\": \"9876543211\",\n  \"role\": \"CUSTOMER\"\n}" },
+            "url": "{{baseUrl}}/auth/register"
+          }
+        },
+        {
+          "name": "Login customer",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Customer login succeeds', () => pm.response.to.have.status(200));",
+                "pm.collectionVariables.set('customerToken', pm.response.json().token);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"CUSTOMER\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Get customer profile",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Customer profile returned', () => pm.response.to.have.status(200));",
+                "pm.collectionVariables.set('customerId', pm.response.json().id);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] }, "url": "{{baseUrl}}/auth/me" }
+        }
+      ]
+    },
+    {
+      "name": "02 - Bills and Customer Directory",
+      "item": [
+        {
+          "name": "Create bill",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Pending bill created', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('PENDING'); });",
+                "pm.collectionVariables.set('billId', pm.response.json().id);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"merchantId\": {{merchantId}},\n  \"customerId\": {{customerId}},\n  \"amount\": 1250.00,\n  \"description\": \"Postman acceptance bill\"\n}" },
+            "url": "{{baseUrl}}/bills"
+          }
+        },
+        { "name": "Get bill", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] }, "url": "{{baseUrl}}/bills/{{billId}}" } },
+        { "name": "List merchant bills", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/bills/merchant/{{merchantId}}" } },
+        { "name": "List customer bills", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] }, "url": "{{baseUrl}}/bills/customer/{{customerId}}" } },
+        { "name": "Merchant customer directory", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/customers/merchant/{{merchantId}}?status=ALL&page=0&size=20" } },
+        { "name": "Merchant customer detail", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/customers/merchant/{{merchantId}}/{{customerId}}" } }
+      ]
+    },
+    {
+      "name": "03 - Transaction Lifecycle",
+      "item": [
+        {
+          "name": "Initiate transaction",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Transaction initiated', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('INITIATED'); });",
+                "pm.collectionVariables.set('transactionId', pm.response.json().id);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"billId\": {{billId}},\n  \"paymentMethod\": \"UPI\"\n}" },
+            "url": "{{baseUrl}}/transactions/initiate"
+          }
+        },
+        {
+          "name": "Authorize transaction",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Authorization decision returned', function () { pm.response.to.have.status(200); pm.expect(['AUTHORIZED', 'FAILED']).to.include(pm.response.json().status); });",
+                "pm.collectionVariables.set('transactionAuthorized', String(pm.response.json().status === 'AUTHORIZED'));"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"transactionId\": {{transactionId}}\n}" },
+            "url": "{{baseUrl}}/transactions/authorize"
+          }
+        },
+        {
+          "name": "Settle authorized transaction",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (pm.collectionVariables.get('transactionAuthorized') !== 'true') { pm.execution.skipRequest(); }"], "type": "text/javascript" } },
+            { "listen": "test", "script": { "exec": ["pm.test('Transaction settled', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('SETTLED'); });"], "type": "text/javascript" } }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"transactionId\": {{transactionId}}\n}" },
+            "url": "{{baseUrl}}/transactions/settle"
+          }
+        },
+        { "name": "Get transaction", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] }, "url": "{{baseUrl}}/transactions/{{transactionId}}" } },
+        { "name": "Transactions by bill", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] }, "url": "{{baseUrl}}/transactions/bill/{{billId}}" } },
+        { "name": "Merchant transactions", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/transactions/merchant/{{merchantId}}" } },
+        { "name": "Customer transactions", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{customerToken}}", "type": "string" }] }, "url": "{{baseUrl}}/transactions/customer/{{customerId}}" } }
+      ]
+    },
+    {
+      "name": "04 - Refunds and Reports",
+      "item": [
+        {
+          "name": "Refund settled bill",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (pm.collectionVariables.get('transactionAuthorized') !== 'true') { pm.execution.skipRequest(); }"], "type": "text/javascript" } },
+            { "listen": "test", "script": { "exec": ["pm.test('Paid bill refunded', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('REFUNDED'); });"], "type": "text/javascript" } }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Postman acceptance refund\"\n}" },
+            "url": "{{baseUrl}}/bills/{{billId}}/refund"
+          }
+        },
+        { "name": "Daily report", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/reports/daily?merchantId={{merchantId}}" } },
+        { "name": "Weekly report", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/reports/weekly?merchantId={{merchantId}}" } },
+        { "name": "Download bill statement CSV", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/bills/merchant/{{merchantId}}/report.csv" } },
+        { "name": "Download refund report CSV", "request": { "method": "GET", "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{merchantToken}}", "type": "string" }] }, "url": "{{baseUrl}}/bills/merchant/{{merchantId}}/refunds.csv" } }
+      ]
+    }
+  ]
+}

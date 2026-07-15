@@ -1,0 +1,64 @@
+erDiagram
+    MERCHANTS ||--o{ BILLS : issues
+    CUSTOMERS ||--o{ BILLS : receives
+    BILLS ||--o{ TRANSACTIONS : attempts
+    TRANSACTIONS ||--o| SETTLEMENTS : produces
+
+    MERCHANTS {
+        bigint id PK
+        varchar name
+        varchar email UK
+        varchar business_name
+        varchar password_hash
+        varchar phone
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CUSTOMERS {
+        bigint id PK
+        varchar name
+        varchar email UK
+        varchar password_hash
+        varchar phone
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    BILLS {
+        bigint id PK
+        bigint merchant_id FK
+        bigint customer_id FK
+        decimal amount
+        varchar description
+        varchar status
+        varchar payment_method
+        varchar refund_reason
+        timestamp refunded_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TRANSACTIONS {
+        bigint id PK
+        bigint bill_id FK
+        varchar payment_method
+        varchar status
+        timestamp initiated_at
+        timestamp authorized_at
+        timestamp settled_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    SETTLEMENTS {
+        bigint id PK
+        bigint transaction_id FK,UK
+        decimal settled_amount
+        varchar reference_number UK
+        timestamp settled_at
+        timestamp created_at
+        timestamp updated_at
+    }

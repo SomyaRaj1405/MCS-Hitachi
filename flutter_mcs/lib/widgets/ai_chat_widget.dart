@@ -32,17 +32,16 @@ class AiChatWidget extends StatefulWidget {
   State<AiChatWidget> createState() => _AiChatWidgetState();
 }
 
-class _AiChatWidgetState extends State<AiChatWidget>
-    with SingleTickerProviderStateMixin {
+class _AiChatWidgetState extends State<AiChatWidget> {
+  static int? _greetedSessionVersion;
   bool _open = false;
   bool _hovering = false;
-  bool _showGreeting = true;
+  bool _showGreeting = false;
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _loading = false;
   int _conversationEpoch = 0;
-  late final AnimationController _swirlController;
   Timer? _greetingTimer;
 
   static const LinearGradient brandGradient = LinearGradient(
@@ -72,7 +71,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
   static const List<String> _merchantSuggestions = [
     "Check today's settlements",
     'View transaction reports',
-    'Create a new bill',
+    'Find a recent payment',
     'Help & Support',
   ];
 
@@ -86,19 +85,18 @@ class _AiChatWidgetState extends State<AiChatWidget>
   @override
   void initState() {
     super.initState();
-    _swirlController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 5),
-    );
-    _greetingTimer = Timer(const Duration(seconds: 6), () {
-      if (mounted) setState(() => _showGreeting = false);
-    });
+    if (_greetedSessionVersion != ApiService.sessionVersion) {
+      _greetedSessionVersion = ApiService.sessionVersion;
+      _showGreeting = true;
+      _greetingTimer = Timer(const Duration(seconds: 6), () {
+        if (mounted) setState(() => _showGreeting = false);
+      });
+    }
   }
 
   @override
   void dispose() {
     _greetingTimer?.cancel();
-    _swirlController.dispose();
     _scrollController.dispose();
     _controller.dispose();
     super.dispose();
@@ -125,10 +123,9 @@ class _AiChatWidgetState extends State<AiChatWidget>
         return;
       }
 
-      final response = await ApiService.post(
-        '/api/ai/chat',
-        {'message': text},
-      ).timeout(_requestTimeout);
+      final response = await ApiService.post('/api/ai/chat', {
+        'message': text,
+      }).timeout(_requestTimeout);
       if (!mounted || conversationEpoch != _conversationEpoch) return;
       final reply = response['reply'] ?? "Sorry, I couldn't process that.";
       setState(() => _messages.add(ChatMessage(reply, false)));
@@ -562,7 +559,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
                   ],
                 ),
                 child: Text(
-                  'Hi $_roleLabel! I’m here to help.',
+                  'Hey there, $_roleLabel',
                   style: AppTextStyles.body.copyWith(
                     color: _panelText,
                     fontWeight: FontWeight.w600,
@@ -581,62 +578,68 @@ class _AiChatWidgetState extends State<AiChatWidget>
   Widget _buildFab({Key? key}) {
     return MouseRegion(
       key: key,
-      onEnter: (_) {
-        _swirlController.repeat();
-        setState(() => _hovering = true);
-      },
-      onExit: (_) {
-        _swirlController.stop();
-        _swirlController.value = 0;
-        setState(() => _hovering = false);
-      },
-      child: AnimatedScale(
-        scale: _hovering ? 1.10 : 1,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutBack,
-        child: AnimatedBuilder(
-          animation: _swirlController,
-          builder: (context, child) => SizedBox(
-            width: 76,
-            height: 76,
-            child: CustomPaint(
-              painter: _SwirlPainter(
-                progress: _swirlController.value,
-                energized: _hovering,
-                darkMode: widget.isDarkMode,
-              ),
-              child: Center(
-                child: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    gradient: _accentGradient,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      width: 3,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _accent.withValues(alpha: 0.38),
-                        blurRadius: 22,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: () => setState(() {
-                        _open = true;
-                        _showGreeting = false;
-                      }),
-                      child: const Center(child: _AiChatMark(size: 29)),
-                    ),
-                  ),
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: AnimatedSlide(
+        offset: _hovering ? const Offset(0, -0.08) : Offset.zero,
+        duration: const Duration(milliseconds: 180),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 58,
+          height: 58,
+          decoration: BoxDecoration(
+            color: _panelSurface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _hovering ? _accent : _panelBorder,
+              width: _hovering ? 1.5 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: widget.isDarkMode ? .30 : .13,
                 ),
+                blurRadius: _hovering ? 24 : 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => setState(() {
+                _open = true;
+                _showGreeting = false;
+              }),
+              child: Stack(
+                children: [
+                  Center(
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        gradient: _accentGradient,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(child: _AssistantGlyph(size: 22)),
+                    ),
+                  ),
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF18A66A),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _panelSurface, width: 2),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -650,11 +653,11 @@ class _AiChatWidgetState extends State<AiChatWidget>
       key: key,
       color: Colors.transparent,
       child: Container(
-        width: 360,
-        height: 500,
+        width: 350,
+        height: 490,
         decoration: BoxDecoration(
           color: _panelSurface,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: _panelBorder),
           boxShadow: [
             BoxShadow(
@@ -678,67 +681,22 @@ class _AiChatWidgetState extends State<AiChatWidget>
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(22, 18, 12, 12),
+      padding: const EdgeInsets.fromLTRB(16, 14, 12, 16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: widget.isDarkMode
               ? const [Color(0xFF241A36), Color(0xFF191525)]
               : const [Color(0xFFFFF7F8), Colors.white],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
       ),
       child: Column(
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: _accent.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: _accent.withValues(alpha: 0.12),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: _accent,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _accent.withValues(alpha: 0.30),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 7),
-                    Text(
-                      'MCS Assistant',
-                      style: AppTextStyles.caption.copyWith(
-                        color: _panelText,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               const Spacer(),
-              _buildHeaderAction(
-                icon: Icons.delete_sweep_outlined,
-                tooltip: 'Clear conversation',
-                onPressed: _messages.isEmpty && !_loading ? null : _clearChat,
-              ),
+              _buildClearAction(),
               const SizedBox(width: 6),
               _buildHeaderAction(
                 icon: Icons.close_rounded,
@@ -747,23 +705,24 @@ class _AiChatWidgetState extends State<AiChatWidget>
               ),
             ],
           ),
+          const SizedBox(height: 10),
           Container(
-            width: 58,
-            height: 58,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               gradient: _accentGradient,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
                   color: _accent.withValues(alpha: 0.32),
-                  blurRadius: 24,
-                  spreadRadius: 5,
+                  blurRadius: 18,
+                  spreadRadius: 2,
                 ),
               ],
             ),
-            child: const Center(child: _AiChatMark(size: 34)),
+            child: const Center(child: _AssistantGlyph(size: 25)),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 11),
           Text.rich(
             TextSpan(
               children: [
@@ -777,7 +736,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
             ),
             textAlign: TextAlign.center,
             style: AppTextStyles.heading.copyWith(
-              fontSize: 24,
+              fontSize: 21,
               color: _panelText,
             ),
           ),
@@ -786,7 +745,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
             'I’m your assistant. How can I help you today?',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodySecondary.copyWith(
-              fontSize: 14,
+              fontSize: 12.5,
               color: _panelSecondary,
             ),
           ),
@@ -834,6 +793,35 @@ class _AiChatWidgetState extends State<AiChatWidget>
     );
   }
 
+  Widget _buildClearAction() {
+    final enabled = _messages.isNotEmpty || _loading;
+    return Tooltip(
+      message: 'Start a fresh conversation',
+      child: TextButton.icon(
+        onPressed: enabled ? _clearChat : null,
+        icon: const Icon(Icons.refresh_rounded, size: 17),
+        label: const Text('New chat'),
+        style: TextButton.styleFrom(
+          foregroundColor: _panelSecondary,
+          disabledForegroundColor: _panelSecondary.withValues(alpha: .3),
+          backgroundColor: enabled
+              ? _panelSurface.withValues(alpha: .72)
+              : Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(
+              color: enabled ? _panelBorder : Colors.transparent,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          textStyle: AppTextStyles.caption.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMessageList() {
     if (_messages.isEmpty) {
       final suggestions = ApiService.role == 'MERCHANT'
@@ -842,22 +830,38 @@ class _AiChatWidgetState extends State<AiChatWidget>
 
       return Container(
         color: _panelSoft,
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final tileWidth = (constraints.maxWidth - 10) / 2;
             return SingleChildScrollView(
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: suggestions
-                    .map(
-                      (suggestion) => SizedBox(
-                        width: tileWidth,
-                        child: _buildSuggestionChip(suggestion),
-                      ),
-                    )
-                    .toList(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Suggested for you',
+                    style: AppTextStyles.caption.copyWith(
+                      color: _panelSecondary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .8,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: suggestions
+                        .map(
+                          (suggestion) => SizedBox(
+                            width: tileWidth,
+                            height: 70,
+                            child: _buildSuggestionChip(suggestion),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
               ),
             );
           },
@@ -868,7 +872,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
       color: _panelBackground,
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
         itemCount: _messages.length + (_loading ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == _messages.length) {
@@ -904,7 +908,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
             child: Container(
               margin: const EdgeInsets.symmetric(vertical: 5),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              constraints: const BoxConstraints(maxWidth: 228),
+              constraints: const BoxConstraints(maxWidth: 276),
               decoration: BoxDecoration(
                 color: msg.isUser ? _accent : _panelSurface,
                 borderRadius: BorderRadius.only(
@@ -954,11 +958,11 @@ class _AiChatWidgetState extends State<AiChatWidget>
         borderRadius: BorderRadius.circular(13),
         onTap: _loading ? null : () => _sendPredefined(text),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 58),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
           decoration: BoxDecoration(
             color: _panelSurface,
-            borderRadius: BorderRadius.circular(13),
+            borderRadius: BorderRadius.circular(11),
             border: Border.all(color: _panelBorder),
             boxShadow: widget.isDarkMode ? const [] : AppShadows.soft,
           ),
@@ -1000,7 +1004,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
 
   Widget _buildInputBar() {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
         color: _panelSurface,
         border: Border(top: BorderSide(color: _panelBorder)),
@@ -1011,7 +1015,7 @@ class _AiChatWidgetState extends State<AiChatWidget>
             child: Container(
               decoration: BoxDecoration(
                 color: _panelBackground,
-                borderRadius: AppRadius.inputBorder,
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _panelBorder),
               ),
               child: TextField(
@@ -1023,13 +1027,13 @@ class _AiChatWidgetState extends State<AiChatWidget>
                   color: _panelText,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Ask a question...',
+                  hintText: 'Message the assistant',
                   hintStyle: AppTextStyles.caption.copyWith(
                     color: _panelSecondary,
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
+                    horizontal: 14,
+                    vertical: 12,
                   ),
                   border: InputBorder.none,
                 ),
@@ -1039,17 +1043,17 @@ class _AiChatWidgetState extends State<AiChatWidget>
           ),
           const SizedBox(width: AppSpacing.sm),
           Container(
-            width: 38,
-            height: 38,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(12),
               gradient: _accentGradient,
             ),
             child: Material(
               color: Colors.transparent,
-              shape: const CircleBorder(),
+              borderRadius: BorderRadius.circular(12),
               child: InkWell(
-                customBorder: const CircleBorder(),
+                borderRadius: BorderRadius.circular(12),
                 onTap: _loading ? null : _send,
                 child: const Center(
                   child: Icon(
@@ -1070,6 +1074,58 @@ class _AiChatWidgetState extends State<AiChatWidget>
 /// Custom four-point spark glyph — distinct from the McsMark wordmark,
 /// signals "assistant" without reusing the main brand logo. Two layered
 /// sparks (large + small) echo the same red gradient language as McsMark.
+class _AssistantGlyph extends StatelessWidget {
+  final double size;
+
+  const _AssistantGlyph({required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Transform.rotate(
+            angle: math.pi / 4,
+            child: Container(
+              width: size * .58,
+              height: size * .58,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: size * .075),
+                borderRadius: BorderRadius.circular(size * .12),
+              ),
+            ),
+          ),
+          Container(
+            width: size * .20,
+            height: size * .20,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+          ),
+          Positioned(
+            right: size * .02,
+            top: size * .06,
+            child: Container(
+              width: size * .16,
+              height: size * .16,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .82),
+                borderRadius: BorderRadius.circular(size * .04),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Legacy glyph retained temporarily for compatibility with older hot-reload
+// states; the redesigned launcher uses _AssistantGlyph.
+// ignore: unused_element
 class _AiChatMark extends StatelessWidget {
   final double size;
   const _AiChatMark({required this.size});
@@ -1140,6 +1196,7 @@ class _AiChatMarkPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+// ignore: unused_element
 class _SwirlPainter extends CustomPainter {
   final double progress;
   final bool energized;

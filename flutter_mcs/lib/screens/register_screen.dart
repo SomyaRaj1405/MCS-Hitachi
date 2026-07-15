@@ -12,12 +12,13 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  static const double _authHeight = 620;
+  static const double _authHeight = 780;
   static const double _formWidth = 430;
 
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _businessNameController = TextEditingController();
   final _passwordController = TextEditingController();
 
   String _selectedRole = 'CUSTOMER';
@@ -36,6 +37,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
+        'businessName': _selectedRole == 'MERCHANT'
+            ? _businessNameController.text.trim()
+            : null,
         'password': _passwordController.text.trim(),
         'role': _selectedRole,
       });
@@ -71,6 +75,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _businessNameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -247,6 +252,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
 
           const SizedBox(height: AppSpacing.md),
+
+          if (_selectedRole == 'MERCHANT') ...[
+            TextField(
+              controller: _businessNameController,
+              decoration: _fieldDecoration(
+                'Business Name',
+                Icons.storefront_outlined,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
 
           TextField(
             controller: _phoneController,

@@ -29,10 +29,22 @@ public class Transaction {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "initiated_at", nullable = false)
+    private LocalDateTime initiatedAt;
+
+    @Column(name = "authorized_at")
+    private LocalDateTime authorizedAt;
+
+    @Column(name = "settled_at")
+    private LocalDateTime settledAt;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (initiatedAt == null) {
+            initiatedAt = createdAt;
+        }
     }
 
     @PreUpdate

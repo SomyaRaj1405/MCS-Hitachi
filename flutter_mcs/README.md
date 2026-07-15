@@ -1,5 +1,19 @@
 # flutter_mcs
 
+## Presentation preflight
+
+Start Docker Desktop, then run this command before starting the Spring backend
+or Flutter application:
+
+```powershell
+.\tools\presentation_preflight.ps1
+```
+
+The script starts the repository's Kafka stack, waits for the broker to accept
+requests, verifies the `transaction-completed` topic, and checks whether the
+backend is reachable on port 8080. Kafka UI is available at
+`http://localhost:8090`.
+
 A new Flutter project.
 
 ## Getting Started

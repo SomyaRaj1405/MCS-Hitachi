@@ -4,10 +4,13 @@ import 'dart:math' as math;
 import '../../widgets/ai_chat_widget.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../services/api_service.dart';
 import '../../services/live_feed_service.dart';
+import '../../services/merchant_customer_service.dart';
+import '../../services/file_download_service.dart';
 import '../login_screen.dart';
 import 'create_bill_screen.dart';
 
@@ -31,12 +34,17 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   int? _merchantId;
   String _searchQuery = '';
   String _statusFilter = 'ALL';
+  String _billDateFilter = 'ALL';
+  String _billSort = 'NEWEST';
+  int _billPage = 0;
+  static const int _billsPerPage = 20;
   String? _errorMessage;
   int? _expandedBillId;
   bool _isDarkMode = false;
   bool _isSidebarCollapsed = false;
   DateTimeRange? _selectedReportRange;
   String? _profilePhone;
+  String? _profileBusinessName;
   _NavItem _activeNav = _NavItem.dashboard;
   Timer? _notificationPoller;
   bool _isPollingBills = false;
@@ -50,6 +58,17 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   final List<LiveTransactionEvent> _liveEvents = [];
   LiveFeedConnectionState _liveFeedConnectionState =
       LiveFeedConnectionState.disconnected;
+  final MerchantCustomerService _customerService = MerchantCustomerService();
+  StreamSubscription<void>? _customerUpdateSubscription;
+  Timer? _customerSearchDebounce;
+  List<Map<String, dynamic>> _customers = [];
+  bool _customersLoading = false;
+  String? _customersError;
+  String _customerSearch = '';
+  String _customerStatus = 'ALL';
+  int _customerPage = 0;
+  int _customerTotal = 0;
+  int _customerTotalPages = 1;
 
   static const Color _brandCrimson = Color(0xFFE60012);
   static const Color _brandDeepRed = Color(0xFF9F0010);
@@ -65,6 +84,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     _loadBills();
     _startNotificationPolling();
     _startLiveFeed();
+    _startCustomerUpdates();
   }
 
   @override
@@ -73,7 +93,48 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     _liveFeedSubscription?.cancel();
     _liveFeedStatusSubscription?.cancel();
     _liveFeedService.dispose();
+    _customerSearchDebounce?.cancel();
+    _customerUpdateSubscription?.cancel();
+    _customerService.dispose();
     super.dispose();
+  }
+
+  void _startCustomerUpdates() {
+    final merchantId = ApiService.userId;
+    if (merchantId == null) return;
+    _customerUpdateSubscription = _customerService.updates.listen((_) {
+      if (mounted) _loadCustomers(showLoading: false);
+    });
+    _customerService.connect(merchantId);
+  }
+
+  Future<void> _loadCustomers({bool showLoading = true}) async {
+    final merchantId = _merchantId ?? ApiService.userId;
+    if (merchantId == null || _customersLoading) return;
+    if (showLoading) setState(() => _customersLoading = true);
+    _customersError = null;
+    try {
+      final result = await _customerService.fetchCustomers(
+        merchantId: merchantId,
+        search: _customerSearch,
+        status: _customerStatus,
+        page: _customerPage,
+      );
+      if (!mounted) return;
+      setState(() {
+        _customers = result.customers;
+        _customerTotal = result.totalElements;
+        _customerTotalPages = result.totalPages;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () =>
+            _customersError = error.toString().replaceFirst('Exception: ', ''),
+      );
+    } finally {
+      if (mounted) setState(() => _customersLoading = false);
+    }
   }
 
   void _startLiveFeed() {
@@ -131,16 +192,10 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
           merchantId:
               int.tryParse(_readString(transaction, 'merchantId')) ??
               _merchantId,
-          customerId: int.tryParse(
-            _readString(transaction, 'customerId'),
-          ),
+          customerId: int.tryParse(_readString(transaction, 'customerId')),
           amount: _amount(transaction),
           status: _transactionStatus(transaction),
-          paymentMode: _readString(
-            transaction,
-            'paymentMethod',
-            fallback: '-',
-          ),
+          paymentMode: _readString(transaction, 'paymentMethod', fallback: '-'),
           timestamp: _billDate(transaction) ?? DateTime.now(),
         ),
       );
@@ -239,6 +294,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
           email: response['email']?.toString(),
         );
         _profilePhone = response['phone']?.toString();
+        _profileBusinessName = response['businessName']?.toString();
       });
     } catch (_) {
       // Login already provides the essential identity; keep it if refresh fails.
@@ -249,11 +305,13 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     required String name,
     required String email,
     required String phone,
+    required String businessName,
   }) async {
     final response = await ApiService.put('/auth/me', {
       'name': name,
       'email': email,
       'phone': phone,
+      'businessName': businessName,
     });
     if (response is! Map) {
       throw Exception('The server returned an invalid profile response');
@@ -269,6 +327,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
         email: response['email']?.toString(),
       );
       _profilePhone = response['phone']?.toString();
+      _profileBusinessName = response['businessName']?.toString();
     });
   }
 
@@ -419,10 +478,39 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
       if (!mounted) return;
       _showLocalMessage('Bill #${selection.billId} was refunded successfully.');
       await _loadBills();
+      await _loadCustomers(showLoading: false);
     } catch (error) {
       if (!mounted) return;
       final message = error.toString().replaceFirst('Exception: ', '');
       _showLocalMessage('Refund failed: $message');
+    }
+  }
+
+  Future<void> _downloadRefundReport() async {
+    final merchantId = _merchantId ?? ApiService.userId;
+    if (merchantId == null) {
+      _showLocalMessage('Merchant account is unavailable.');
+      return;
+    }
+    try {
+      final bytes = await ApiService.getBytes(
+        '/bills/merchant/$merchantId/refunds.csv',
+      );
+      final saved = await saveDownloadedFile(
+        bytes,
+        'merchant-$merchantId-refunds.csv',
+      );
+      if (!mounted) return;
+      _showLocalMessage(
+        saved
+            ? 'Refund report downloaded. Open it with Excel or Sheets.'
+            : 'Downloads are currently supported in the web app.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showLocalMessage(
+        'Refund report failed: ${error.toString().replaceFirst('Exception: ', '')}',
+      );
     }
   }
 
@@ -489,19 +577,37 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   }
 
   List<dynamic> get _filteredBills {
-    return _bills.where((bill) {
+    final now = DateTime.now();
+    final bills = _bills.where((bill) {
       final status = _billStatus(bill);
+      final date = _billDate(bill);
       final query = _searchQuery.toLowerCase().trim();
       final matchesStatus = _statusFilter == 'ALL' || status == _statusFilter;
+      final matchesDate = switch (_billDateFilter) {
+        'TODAY' =>
+          date != null &&
+              date.year == now.year &&
+              date.month == now.month &&
+              date.day == now.day,
+        '7_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 7))),
+        '30_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 30))),
+        _ => true,
+      };
       final matchesSearch =
           query.isEmpty ||
           _readString(bill, 'description').toLowerCase().contains(query) ||
           _readString(bill, 'customerName').toLowerCase().contains(query) ||
           _readString(bill, 'customerId').toLowerCase().contains(query) ||
           _readString(bill, 'id').toLowerCase().contains(query);
-      return matchesStatus && matchesSearch;
+      return matchesStatus && matchesDate && matchesSearch;
     }).toList();
+    bills.sort(_billSort == 'OLDEST' ? _sortOldestFirst : _sortNewestFirst);
+    return bills;
   }
+
+  int _sortOldestFirst(dynamic a, dynamic b) => -_sortNewestFirst(a, b);
 
   List<dynamic> _filteredTransactions() {
     final query = _searchQuery.toLowerCase().trim();
@@ -539,23 +645,35 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
 
   List<dynamic> get _paidBills =>
       _bills.where((bill) => _billStatus(bill) == 'PAID').toList();
-  List<dynamic> get _rangePaidBills =>
-      _paidBills.where((bill) => _isInReportRange(_billDate(bill))).toList();
+  List<dynamic> get _rangePaidBills => _paidBills
+      .where((bill) => _isInReportRange(_billSettlementDate(bill)))
+      .toList();
+  List<dynamic> get _previousRangePaidBills {
+    final range = _effectiveReportRange;
+    final dayCount = range.duration.inDays + 1;
+    final previousEnd = range.start.subtract(const Duration(days: 1));
+    final previousStart = previousEnd.subtract(Duration(days: dayCount - 1));
+    return _paidBills.where((bill) {
+      final date = _billSettlementDate(bill);
+      if (date == null) return false;
+      final day = DateTime(date.year, date.month, date.day);
+      return !day.isBefore(previousStart) && !day.isAfter(previousEnd);
+    }).toList();
+  }
   List<dynamic> get _pendingBills =>
       _bills.where((bill) => _billStatus(bill) == 'PENDING').toList();
   List<dynamic> get _failedBills =>
       _bills.where((bill) => _billStatus(bill) == 'FAILED').toList();
+  List<dynamic> get _refundedBills =>
+      _bills.where((bill) => _billStatus(bill) == 'REFUNDED').toList();
+  double get _refundedAmount =>
+      _refundedBills.fold(0.0, (sum, bill) => sum + _amount(bill));
   List<dynamic> get _settledTransactions => _transactions
       .where((transaction) => _transactionStatus(transaction) == 'SETTLED')
       .toList();
   List<dynamic> get _failedTransactions => _transactions
       .where((transaction) => _transactionStatus(transaction) == 'FAILED')
       .toList();
-  List<dynamic> get _pendingTransactions => _transactions.where((transaction) {
-    final status = _transactionStatus(transaction);
-    return status == 'INITIATED' || status == 'AUTHORIZED';
-  }).toList();
-
   int get _paidCount => _paidBills.length;
   int get _pendingCount => _pendingBills.length;
   int get _failedCount =>
@@ -565,12 +683,14 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   double get _dailyReportRevenue =>
       _numberFrom(_dailyReport, 'totalRevenue') ?? _todayPaidAmount();
   double get _weeklyReportRevenue => _selectedReportRange == null
-      ? (_numberFrom(_weeklyReport, 'totalRevenue') ?? _totalRevenue)
+      ? (_numberFrom(_weeklyReport, 'totalRevenue') ??
+            _rangePaidBills.fold(0.0, (sum, bill) => sum + _amount(bill)))
       : _rangePaidBills.fold(0.0, (sum, bill) => sum + _amount(bill));
   int get _dailyReportSettledCount =>
       _intFrom(_dailyReport, 'totalSettledTransactions') ?? _todayPaidCount();
   int get _weeklyReportSettledCount => _selectedReportRange == null
-      ? (_intFrom(_weeklyReport, 'totalSettledTransactions') ?? _paidCount)
+      ? (_intFrom(_weeklyReport, 'totalSettledTransactions') ??
+            _rangePaidBills.length)
       : _rangePaidBills.length;
   double get _pendingAmount =>
       _pendingBills.fold(0.0, (sum, b) => sum + _amount(b));
@@ -761,56 +881,545 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   }
 
   Widget _customersPlaceholderView() {
+    final outstanding = _customers.fold<double>(
+      0,
+      (sum, customer) => sum + _customerNumber(customer, 'outstandingAmount'),
+    );
+    final paid = _customers.fold<double>(
+      0,
+      (sum, customer) => sum + _customerNumber(customer, 'totalPaid'),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _pageHeader(),
         const SizedBox(height: AppSpacing.lg),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cards = [
+              _customerMetric(
+                'Connected customers',
+                '$_customerTotal',
+                Icons.people_alt_outlined,
+                _brandInk,
+              ),
+              _customerMetric(
+                'Visible paid value',
+                _money(paid),
+                Icons.payments_outlined,
+                const Color(0xFF168A55),
+              ),
+              _customerMetric(
+                'Visible outstanding',
+                _money(outstanding),
+                Icons.schedule_rounded,
+                AppColors.brandRed,
+              ),
+            ];
+            return constraints.maxWidth < 760
+                ? Column(
+                    children: cards
+                        .map(
+                          (card) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: card,
+                          ),
+                        )
+                        .toList(),
+                  )
+                : Row(
+                    children: [
+                      for (var i = 0; i < cards.length; i++) ...[
+                        Expanded(child: cards[i]),
+                        if (i != cards.length - 1) const SizedBox(width: 12),
+                      ],
+                    ],
+                  );
+          },
+        ),
+        const SizedBox(height: AppSpacing.md),
         _panel(
-          title: 'Customers',
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 46),
-            decoration: BoxDecoration(
-              color: _surfaceSoft,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _border),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  height: 58,
-                  width: 58,
-                  decoration: BoxDecoration(
-                    color: AppColors.brandRed.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(14),
+          title: 'Customer Directory',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _LivePulseDot(
+                color: _customersError == null
+                    ? AppColors.success
+                    : AppColors.error,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                _customersError == null ? 'LIVE' : 'UNAVAILABLE',
+                style: AppTextStyles.caption.copyWith(
+                  color: _customersError == null
+                      ? AppColors.success
+                      : AppColors.error,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _customerFilters(),
+              const SizedBox(height: 16),
+              if (_customersLoading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(36),
+                    child: CircularProgressIndicator(),
                   ),
-                  child: const Icon(
-                    Icons.people_outline_rounded,
-                    color: AppColors.brandRed,
-                    size: 30,
+                )
+              else if (_customersError != null)
+                _customerErrorState()
+              else if (_customers.isEmpty)
+                _emptyState('No customers match these filters')
+              else
+                ..._customers.map(_customerRow),
+              if (!_customersLoading &&
+                  _customersError == null &&
+                  _customers.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      'Page ${_customerPage + 1} of $_customerTotalPages',
+                      style: AppTextStyles.caption.copyWith(
+                        color: _textSecondary,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: _customerPage > 0
+                          ? () {
+                              setState(() => _customerPage--);
+                              _loadCustomers();
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_left_rounded),
+                    ),
+                    IconButton(
+                      onPressed: _customerPage < _customerTotalPages - 1
+                          ? () {
+                              setState(() => _customerPage++);
+                              _loadCustomers();
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_right_rounded),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  double _customerNumber(Map<String, dynamic> customer, String key) =>
+      (customer[key] as num?)?.toDouble() ??
+      double.tryParse(customer[key]?.toString() ?? '') ??
+      0;
+
+  Widget _customerMetric(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: AppTextStyles.caption.copyWith(
+                    color: _textSecondary,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 3),
                 Text(
-                  'Customer workspace is not connected yet',
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.sectionTitle.copyWith(
                     color: _textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Once customer APIs are available, customer profiles, payment history, and outstanding balances will appear here.',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodySecondary.copyWith(
-                    color: _textSecondary,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _customerFilters() {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        SizedBox(
+          width: 290,
+          height: 42,
+          child: TextField(
+            onChanged: (value) {
+              _customerSearchDebounce?.cancel();
+              _customerSearchDebounce = Timer(
+                const Duration(milliseconds: 350),
+                () {
+                  if (!mounted) return;
+                  setState(() {
+                    _customerSearch = value;
+                    _customerPage = 0;
+                  });
+                  _loadCustomers();
+                },
+              );
+            },
+            decoration: InputDecoration(
+              hintText: 'Search customer name, email or ID',
+              prefixIcon: const Icon(Icons.search_rounded, size: 19),
+              filled: true,
+              fillColor: _surfaceSoft,
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide: BorderSide(color: _border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide: BorderSide(color: _border),
+              ),
+            ),
+          ),
+        ),
+        for (final filter in const {
+          'ALL': 'All',
+          'OUTSTANDING': 'Outstanding',
+          'ACTIVE': 'Active',
+        }.entries)
+          ChoiceChip(
+            label: Text(filter.value),
+            selected: _customerStatus == filter.key,
+            onSelected: (_) {
+              setState(() {
+                _customerStatus = filter.key;
+                _customerPage = 0;
+              });
+              _loadCustomers();
+            },
+            selectedColor: AppColors.brandRed,
+            labelStyle: AppTextStyles.caption.copyWith(
+              color: _customerStatus == filter.key
+                  ? Colors.white
+                  : _textSecondary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        IconButton(
+          onPressed: _customersLoading ? null : _loadCustomers,
+          tooltip: 'Refresh customers',
+          icon: const Icon(Icons.refresh_rounded),
         ),
       ],
+    );
+  }
+
+  Widget _customerErrorState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.error.withValues(alpha: .18)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.cloud_off_rounded, color: AppColors.error, size: 30),
+          const SizedBox(height: 9),
+          Text(
+            'Customer service unavailable',
+            style: AppTextStyles.cardTitle.copyWith(color: _textPrimary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _customersError ?? 'Unable to load customers.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.caption.copyWith(color: _textSecondary),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _loadCustomers,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Try again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _customerRow(Map<String, dynamic> customer) {
+    final id =
+        (customer['customerId'] as num?)?.toInt() ??
+        int.tryParse(customer['id']?.toString() ?? '');
+    final name =
+        customer['name']?.toString() ??
+        customer['customerName']?.toString() ??
+        'Customer';
+    final pending = (customer['pendingBills'] as num?)?.toInt() ?? 0;
+    return InkWell(
+      onTap: id == null ? null : () => _showCustomerDetails(id),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 9),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _surfaceSoft,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _border),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: _brandCrimson.withValues(alpha: .10),
+              child: Text(
+                name.isEmpty ? 'C' : name.characters.first.toUpperCase(),
+                style: const TextStyle(
+                  color: _brandCrimson,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: AppTextStyles.cardTitle.copyWith(
+                      color: _textPrimary,
+                    ),
+                  ),
+                  Text(
+                    'Customer #${id ?? '-'}  •  ${customer['email'] ?? 'No email'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption.copyWith(
+                      color: _textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _customerValue(
+                'TOTAL PAID',
+                _money(_customerNumber(customer, 'totalPaid')),
+              ),
+            ),
+            Expanded(
+              child: _customerValue(
+                'OUTSTANDING',
+                _money(_customerNumber(customer, 'outstandingAmount')),
+              ),
+            ),
+            Expanded(
+              child: _customerValue('BILLS', '${customer['totalBills'] ?? 0}'),
+            ),
+            if (pending > 0) _statusPill('PENDING') else _statusPill('PAID'),
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, color: _textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _customerValue(String label, String value) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: AppTextStyles.caption.copyWith(
+          color: _textMuted,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 3),
+      Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.body.copyWith(
+          color: _textPrimary,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    ],
+  );
+
+  Future<void> _showCustomerDetails(int customerId) async {
+    final merchantId = _merchantId ?? ApiService.userId;
+    if (merchantId == null) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final details = await _customerService.fetchCustomerDetails(
+        merchantId,
+        customerId,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: _surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => _customerDetailSheet(details),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _showLocalMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Widget _customerDetailSheet(Map<String, dynamic> details) {
+    final name =
+        details['name']?.toString() ??
+        details['customerName']?.toString() ??
+        'Customer';
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: _brandCrimson,
+                    child: Text(
+                      name.isEmpty ? 'C' : name.characters.first.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: AppTextStyles.heading.copyWith(
+                            color: _textPrimary,
+                            fontSize: 22,
+                          ),
+                        ),
+                        Text(
+                          '${details['email'] ?? 'No email'}  •  Customer #${details['customerId'] ?? details['id'] ?? '-'}',
+                          style: AppTextStyles.caption.copyWith(
+                            color: _textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  SizedBox(
+                    width: 210,
+                    child: _customerMetric(
+                      'Total paid',
+                      _money(_customerNumber(details, 'totalPaid')),
+                      Icons.payments_outlined,
+                      AppColors.success,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 210,
+                    child: _customerMetric(
+                      'Outstanding',
+                      _money(_customerNumber(details, 'outstandingAmount')),
+                      Icons.schedule_rounded,
+                      AppColors.error,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 210,
+                    child: _customerMetric(
+                      'Total bills',
+                      '${details['totalBills'] ?? 0}',
+                      Icons.receipt_long_outlined,
+                      _brandInk,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Payment summary',
+                style: AppTextStyles.sectionTitle.copyWith(color: _textPrimary),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${details['paidBills'] ?? 0} paid  •  ${details['pendingBills'] ?? 0} pending  •  ${details['failedBills'] ?? 0} failed',
+                style: AppTextStyles.body.copyWith(color: _textSecondary),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -821,6 +1430,8 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
         _reportsHeader(),
         const SizedBox(height: 22),
         _reportMetricGrid(),
+        const SizedBox(height: 18),
+        _refundReportPanel(),
         const SizedBox(height: 18),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -970,6 +1581,10 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                     Icons.people_outline_rounded,
                     'Customers',
                     isCollapsed: isCollapsed,
+                    onTap: () {
+                      setState(() => _activeNav = _NavItem.customers);
+                      if (_customers.isEmpty) _loadCustomers();
+                    },
                   ),
                   if (!isCollapsed)
                     Padding(
@@ -1511,6 +2126,9 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
       text: ApiService.userEmail ?? 'merchant-${_merchantId ?? ''}@mcs.local',
     );
     final phoneController = TextEditingController(text: _profilePhone ?? '');
+    final businessNameController = TextEditingController(
+      text: _profileBusinessName ?? '',
+    );
     var isSaving = false;
     String? saveError;
 
@@ -1617,6 +2235,19 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
+                      controller: businessNameController,
+                      textInputAction: TextInputAction.next,
+                      decoration: _profileFieldDecoration(
+                        'Business name',
+                        Icons.storefront_outlined,
+                      ),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'Enter a business name'
+                          : null,
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
                       controller: emailController,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
@@ -1689,6 +2320,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                           name: nameController.text.trim(),
                           email: emailController.text.trim(),
                           phone: phoneController.text.trim(),
+                          businessName: businessNameController.text.trim(),
                         );
                         if (!dialogContext.mounted) return;
                         Navigator.pop(dialogContext);
@@ -1720,6 +2352,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     nameController.dispose();
     emailController.dispose();
     phoneController.dispose();
+    businessNameController.dispose();
   }
 
   InputDecoration _profileFieldDecoration(String label, IconData icon) {
@@ -1910,49 +2543,110 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
       itemBuilder: (context) => [
         PopupMenuItem(
           enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                merchantLabel,
-                style: AppTextStyles.cardTitle.copyWith(color: _textPrimary),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Container(
+            width: 270,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [_brandWine, _brandCrimson],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              Text(
-                merchantEmail,
-                style: AppTextStyles.caption.copyWith(color: _textSecondary),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.white.withValues(alpha: .16),
+                  child: Text(
+                    _merchantInitials(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        merchantLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.cardTitle.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Merchant workspace • $merchantId',
+                        style: AppTextStyles.caption.copyWith(
+                          color: Colors.white.withValues(alpha: .78),
+                        ),
+                      ),
+                      Text(
+                        merchantEmail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          color: Colors.white.withValues(alpha: .72),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'profile',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.storefront_rounded, color: _brandCrimson),
+            title: Text(
+              'Business profile',
+              style: AppTextStyles.body.copyWith(
+                color: _textPrimary,
+                fontWeight: FontWeight.w700,
               ),
-              Text(
-                'Merchant ID $merchantId',
-                style: AppTextStyles.caption.copyWith(color: _textMuted),
-              ),
-            ],
+            ),
+            subtitle: Text(
+              'Identity and contact details',
+              style: AppTextStyles.caption.copyWith(color: _textMuted),
+            ),
           ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
-          value: 'profile',
-          child: Text(
-            'Profile',
-            style: AppTextStyles.body.copyWith(color: _textPrimary),
-          ),
-        ),
-        PopupMenuItem(
           value: 'logout',
-          child: Text(
-            'Logout',
-            style: AppTextStyles.body.copyWith(
-              color: AppColors.error,
-              fontWeight: FontWeight.w700,
-            ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.logout_rounded,
+                color: AppColors.error,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Sign out of merchant portal',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
       ],
       child: Container(
-        height: 48,
-        padding: EdgeInsets.fromLTRB(8, 6, showName ? 10 : 8, 6),
+        height: 52,
+        padding: EdgeInsets.fromLTRB(6, 5, showName ? 12 : 6, 5),
         decoration: BoxDecoration(
           color: _surface,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: _border),
           boxShadow: _isDarkMode
               ? []
@@ -1968,21 +2662,21 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 34,
-              width: 34,
+              height: 40,
+              width: 40,
               decoration: BoxDecoration(
-                color: _isDarkMode
-                    ? const Color(0xFF24392F)
-                    : const Color(0xFFEAF7F0),
-                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [_brandWine, _brandCrimson],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(9),
               ),
               alignment: Alignment.center,
               child: Text(
                 _merchantInitials(),
                 style: AppTextStyles.caption.copyWith(
-                  color: _isDarkMode
-                      ? const Color(0xFF9FF0C4)
-                      : const Color(0xFF0D8D53),
+                  color: Colors.white,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -1996,7 +2690,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 190),
                     child: Text(
-                      merchantEmail,
+                      merchantLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.caption.copyWith(
@@ -2009,7 +2703,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 190),
                     child: Text(
-                      '$merchantLabel - Merchant $merchantId',
+                      'Merchant account  $merchantId',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.caption.copyWith(
@@ -2022,15 +2716,10 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
               ),
               const SizedBox(width: 10),
             ],
-            Container(
-              height: 24,
-              width: 24,
-              decoration: BoxDecoration(
-                color: _surfaceSoft,
-                shape: BoxShape.circle,
-                border: Border.all(color: _border),
-              ),
-              child: Icon(Icons.add_rounded, size: 15, color: _textSecondary),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 20,
+              color: _textSecondary,
             ),
           ],
         ),
@@ -2106,13 +2795,19 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   }
 
   Widget _metricGrid({required bool isCompact}) {
+    final previousRevenue = _previousRangePaidBills.fold(
+      0.0,
+      (sum, bill) => sum + _amount(bill),
+    );
+    final previousTransactions = _previousRangePaidBills.length;
     final cards = [
       _metricCard(
         title: 'Total Revenue',
         description:
             'Total value of successfully settled payments during the current week.',
         value: _money(_weeklyReportRevenue),
-        caption: '18.6% compared with last week',
+        caption: _comparisonCaption(_weeklyReportRevenue, previousRevenue),
+        captionIcon: _comparisonIcon(_weeklyReportRevenue, previousRevenue),
         color: _brandCrimson,
         icon: Icons.trending_up_rounded,
       ),
@@ -2121,7 +2816,14 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
         description:
             'Number of successfully settled transactions during the current week.',
         value: _weeklyReportSettledCount.toString(),
-        caption: '12.4% compared with last week',
+        caption: _comparisonCaption(
+          _weeklyReportSettledCount,
+          previousTransactions,
+        ),
+        captionIcon: _comparisonIcon(
+          _weeklyReportSettledCount,
+          previousTransactions,
+        ),
         color: _brandInk,
         icon: Icons.sync_alt_rounded,
       ),
@@ -2130,6 +2832,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
         description: 'Total value of payments successfully settled today.',
         value: _money(_dailyReportRevenue),
         caption: '$_dailyReportSettledCount settled today',
+        captionIcon: Icons.check_circle_outline_rounded,
         color: _brandDeepRed,
         icon: Icons.verified_user_outlined,
       ),
@@ -2139,6 +2842,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
             'Total value of bills still waiting to complete settlement.',
         value: _money(_pendingAmount),
         caption: '$_pendingCount bills pending',
+        captionIcon: Icons.schedule_rounded,
         color: _brandGraphite,
         icon: Icons.schedule_rounded,
       ),
@@ -2172,6 +2876,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     required String description,
     required String value,
     required String caption,
+    required IconData captionIcon,
     required Color color,
     required IconData icon,
   }) {
@@ -2259,8 +2964,8 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                     ),
                     Row(
                       children: [
-                        const Icon(
-                          Icons.arrow_upward_rounded,
+                        Icon(
+                          captionIcon,
                           color: Colors.white,
                           size: 16,
                         ),
@@ -2301,6 +3006,25 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     );
   }
 
+  String _comparisonCaption(num current, num previous) {
+    final period = _selectedReportRange == null
+        ? 'previous 7 days'
+        : 'previous period';
+    if (previous == 0) {
+      return current == 0 ? 'No change vs $period' : 'New activity vs $period';
+    }
+    final change = ((current - previous) / previous * 100).abs();
+    final direction = current >= previous ? 'higher' : 'lower';
+    return '${change.toStringAsFixed(1)}% $direction vs $period';
+  }
+
+  IconData _comparisonIcon(num current, num previous) {
+    if (current == previous) return Icons.remove_rounded;
+    return current > previous
+        ? Icons.arrow_upward_rounded
+        : Icons.arrow_downward_rounded;
+  }
+
   List<_ChartPoint> _weeklyRevenuePoints() {
     final range = _effectiveReportRange;
     final dayCount = range.duration.inDays + 1;
@@ -2317,7 +3041,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
               : '${days[i].day}/${days[i].month}',
           _paidBills
               .where((bill) {
-                final date = _billDate(bill);
+                final date = _billSettlementDate(bill);
                 return date != null &&
                     date.year == days[i].year &&
                     date.month == days[i].month &&
@@ -2327,28 +3051,27 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
         ),
     ];
 
-    return points.every((point) => point.value == 0) &&
-            _selectedReportRange == null
-        ? _distributedChartPoints(days)
-        : points;
+    return points;
   }
 
   List<_ChartPoint> _previousWeekPoints(List<_ChartPoint> current) {
+    final currentRange = _effectiveReportRange;
+    final dayCount = currentRange.duration.inDays + 1;
+    final previousStart = currentRange.start.subtract(Duration(days: dayCount));
     return [
       for (var i = 0; i < current.length; i++)
-        _ChartPoint('', math.max(0, current[i].value * (0.62 + (i * 0.03)))),
-    ];
-  }
-
-  List<_ChartPoint> _distributedChartPoints(List<DateTime> days) {
-    final weeklyBase = math.max(_weeklyReportRevenue, _totalRevenue);
-    final base = weeklyBase <= 0 ? 100000.0 : weeklyBase;
-    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return [
-      for (var i = 0; i < days.length; i++)
         _ChartPoint(
-          labels[days[i].weekday - 1],
-          base * (0.75 + ((i % 5) * 0.125)) / days.length,
+          '',
+          _paidBills
+              .where((bill) {
+                final date = _billSettlementDate(bill);
+                final day = previousStart.add(Duration(days: i));
+                return date != null &&
+                    date.year == day.year &&
+                    date.month == day.month &&
+                    date.day == day.day;
+              })
+              .fold(0.0, (sum, bill) => sum + _amount(bill)),
         ),
     ];
   }
@@ -2494,6 +3217,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                           FlSpot(i.toDouble(), previousData[i].value),
                       ],
                       isCurved: true,
+                      preventCurveOverShooting: true,
                       color: _brandGraphite.withValues(alpha: 0.42),
                       barWidth: 2,
                       dashArray: [7, 7],
@@ -2505,6 +3229,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                           FlSpot(i.toDouble(), chartData[i].value),
                       ],
                       isCurved: true,
+                      preventCurveOverShooting: true,
                       color: _brandCrimson,
                       barWidth: 4,
                       isStrokeCapRound: true,
@@ -2562,17 +3287,11 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   }
 
   Widget _statusPanel() {
-    final successfulCount = _transactions.isEmpty
-        ? _paidCount
-        : _settledTransactions.length;
-    final pendingAttemptCount = _transactions.isEmpty
-        ? _pendingCount
-        : _pendingTransactions.length;
-    final total = math.max(
-      _transactions.isEmpty ? _bills.length : _transactions.length,
-      1,
-    );
-    final hasData = _transactions.isEmpty ? _bills.isNotEmpty : true;
+    final successfulCount = _paidCount;
+    final failedCount = _failedBills.length;
+    final pendingCount = _pendingCount;
+    final total = math.max(_bills.length, 1);
+    final hasData = _bills.isNotEmpty;
     final successColor = _brandCrimson;
     final failedColor = _brandInk;
     final pendingColor = _brandGraphite;
@@ -2606,8 +3325,8 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
             sections: hasData
                 ? [
                     _statusPieSection(successfulCount, total, successColor),
-                    _statusPieSection(_failedCount, total, failedColor),
-                    _statusPieSection(pendingAttemptCount, total, pendingColor),
+                    _statusPieSection(failedCount, total, failedColor),
+                    _statusPieSection(pendingCount, total, pendingColor),
                   ]
                 : [
                     PieChartSectionData(
@@ -2650,12 +3369,12 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
           successColor,
         ),
         const SizedBox(height: 16),
-        _legendRow('Failed', _failedCount, _failedCount / total, failedColor),
+        _legendRow('Failed', failedCount, failedCount / total, failedColor),
         const SizedBox(height: 16),
         _legendRow(
           'Pending',
-          pendingAttemptCount,
-          pendingAttemptCount / total,
+          pendingCount,
+          pendingCount / total,
           pendingColor,
         ),
       ],
@@ -2691,16 +3410,16 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                       Expanded(
                         child: _legendRow(
                           'Failed',
-                          _failedCount,
-                          _failedCount / total,
+                          failedCount,
+                          failedCount / total,
                           failedColor,
                         ),
                       ),
                       Expanded(
                         child: _legendRow(
                           'Pending',
-                          pendingAttemptCount,
-                          pendingAttemptCount / total,
+                          pendingCount,
+                          pendingCount / total,
                           pendingColor,
                         ),
                       ),
@@ -3092,10 +3811,45 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
               children: [
                 _liveFeedSummary(events),
                 const SizedBox(height: 12),
-                for (var index = 0; index < events.length; index++) ...[
-                  _liveEventRow(events[index], isLatest: index == 0),
-                  if (index != events.length - 1) const SizedBox(height: 8),
-                ],
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 1000
+                        ? 4
+                        : constraints.maxWidth >= 620
+                        ? 2
+                        : 1;
+                    const gap = 10.0;
+                    final cardWidth =
+                        (constraints.maxWidth - gap * (columns - 1)) / columns;
+                    return SizedBox(
+                      height: 180,
+                      child: ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(context).copyWith(
+                          scrollbars: false,
+                          dragDevices: const {
+                            PointerDeviceKind.touch,
+                            PointerDeviceKind.mouse,
+                            PointerDeviceKind.trackpad,
+                          },
+                        ),
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: events.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(width: gap),
+                          itemBuilder: (context, index) => SizedBox(
+                            width: cardWidth,
+                            child: _liveEventRow(
+                              events[index],
+                              isLatest: index == 0,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
     );
@@ -3190,17 +3944,15 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     );
   }
 
-  Widget _liveEventRow(
-    LiveTransactionEvent event, {
-    required bool isLatest,
-  }) {
+  Widget _liveEventRow(LiveTransactionEvent event, {required bool isLatest}) {
     final status = event.status.toUpperCase();
     final localTime = event.timestamp.toLocal();
     final clockLabel =
         '${localTime.hour.toString().padLeft(2, '0')}:'
         '${localTime.minute.toString().padLeft(2, '0')}';
     final now = DateTime.now();
-    final isToday = localTime.year == now.year &&
+    final isToday =
+        localTime.year == now.year &&
         localTime.month == now.month &&
         localTime.day == now.day;
     final timeLabel = isToday
@@ -3221,9 +3973,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
             : _surfaceSoft,
         borderRadius: BorderRadius.circular(13),
         border: Border.all(
-          color: isLatest
-              ? _brandCrimson.withValues(alpha: 0.20)
-              : _border,
+          color: isLatest ? _brandCrimson.withValues(alpha: 0.20) : _border,
         ),
       ),
       child: LayoutBuilder(
@@ -3354,10 +4104,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     );
   }
 
-  Widget _liveEventMetaChip({
-    required IconData icon,
-    required String label,
-  }) {
+  Widget _liveEventMetaChip({required IconData icon, required String label}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -3633,11 +4380,9 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
           ),
           const SizedBox(height: 10),
           _actionTile(
-            icon: Icons.download_rounded,
-            label: 'Download Statements',
-            onTap: () => _showLocalMessage(
-              'Statement download is not connected to a backend route yet.',
-            ),
+            icon: Icons.table_view_rounded,
+            label: 'Export Refund Report',
+            onTap: _downloadRefundReport,
             isWide: true,
           ),
         ],
@@ -3666,12 +4411,12 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
         trendLabel: '${_settlementRateLabel()} settled',
       ),
       _reportMetricCard(
-        title: 'Merchant',
-        value: _merchantDisplayName(),
-        caption: 'ID ${_merchantId ?? '-'}',
-        color: _brandInk,
-        icon: Icons.storefront_rounded,
-        trendLabel: '${_bills.length} bills',
+        title: 'Refunded Value',
+        value: _money(_refundedAmount),
+        caption: '${_refundedBills.length} refunds',
+        color: const Color(0xFF8B3A62),
+        icon: Icons.currency_exchange_rounded,
+        trendLabel: _refundedBills.isEmpty ? 'No refunds' : 'Refund activity',
       ),
       _reportMetricCard(
         title: 'Total Settlements',
@@ -3690,6 +4435,80 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
           if (i != cards.length - 1) const SizedBox(width: 16),
         ],
       ],
+    );
+  }
+
+  Widget _refundReportPanel() {
+    final refunds = [..._refundedBills]..sort(_sortNewestFirst);
+    return _panel(
+      title: 'Refund Activity',
+      trailing: Text(
+        '${refunds.length} refunds • ${_money(_refundedAmount)}',
+        style: AppTextStyles.caption.copyWith(
+          color: _textSecondary,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      child: refunds.isEmpty
+          ? _emptyState('No refunded payments in the current data')
+          : Column(
+              children: refunds.take(8).map((bill) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: _border)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        height: 38,
+                        width: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF8B3A62).withValues(alpha: .10),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: const Icon(
+                          Icons.currency_exchange_rounded,
+                          color: Color(0xFF8B3A62),
+                          size: 19,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Bill #${_readString(bill, 'id', fallback: '-')}',
+                              style: AppTextStyles.body.copyWith(
+                                color: _textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              '${_readString(bill, 'customerName', fallback: 'Customer')} • ${_friendlyDate(bill)}',
+                              style: AppTextStyles.caption.copyWith(
+                                color: _textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        _money(_amount(bill)),
+                        style: AppTextStyles.body.copyWith(
+                          color: const Color(0xFF8B3A62),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
     );
   }
 
@@ -3866,6 +4685,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                           FlSpot(i.toDouble(), previous[i].value),
                       ],
                       isCurved: true,
+                      preventCurveOverShooting: true,
                       color: _textMuted,
                       barWidth: 2,
                       dashArray: [6, 6],
@@ -3877,6 +4697,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
                           FlSpot(i.toDouble(), points[i].value),
                       ],
                       isCurved: true,
+                      preventCurveOverShooting: true,
                       color: _brandCrimson,
                       barWidth: 4,
                       isStrokeCapRound: true,
@@ -4743,10 +5564,19 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   }
 
   Widget _billsSection({String title = 'Bills'}) {
+    final filteredBills = _filteredBills;
+    final pageCount = filteredBills.isEmpty
+        ? 1
+        : (filteredBills.length / _billsPerPage).ceil();
+    final safePage = _billPage.clamp(0, pageCount - 1);
+    final pageBills = filteredBills
+        .skip(safePage * _billsPerPage)
+        .take(_billsPerPage)
+        .toList();
     return _panel(
       title: title,
       trailing: Text(
-        '${_filteredBills.length} of ${_bills.length} shown',
+        '${filteredBills.length} of ${_bills.length} found',
         style: AppTextStyles.caption.copyWith(color: _textSecondary),
       ),
       child: Column(
@@ -4758,40 +5588,125 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: _border),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.filter_alt_outlined,
-                  size: 19,
-                  color: _textSecondary,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Status',
-                  style: AppTextStyles.caption.copyWith(
-                    color: _textSecondary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _filterChip('ALL', 'All bills'),
-                        _filterChip('PENDING', 'Pending'),
-                        _filterChip('PAID', 'Paid'),
-                        _filterChip('FAILED', 'Failed'),
-                      ],
+                Row(
+                  children: [
+                    Icon(
+                      Icons.filter_alt_outlined,
+                      size: 19,
+                      color: _textSecondary,
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Status',
+                      style: AppTextStyles.caption.copyWith(
+                        color: _textSecondary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _filterChip('ALL', 'All bills'),
+                            _filterChip('PENDING', 'Pending'),
+                            _filterChip('PAID', 'Paid'),
+                            _filterChip('FAILED', 'Failed'),
+                            _filterChip('REFUNDED', 'Refunded'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: _openCreateBill,
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('New bill'),
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final search = SizedBox(
+                      height: 42,
+                      child: TextField(
+                        onChanged: (value) => setState(() {
+                          _searchQuery = value;
+                          _billPage = 0;
+                        }),
+                        style: AppTextStyles.body.copyWith(color: _textPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Search bill ID, customer or description',
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
+                            size: 19,
+                          ),
+                          filled: true,
+                          fillColor: _surface,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(9),
+                            borderSide: BorderSide(color: _border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(9),
+                            borderSide: BorderSide(color: _border),
+                          ),
+                        ),
+                      ),
+                    );
+                    final dateFilter = _billFilterDropdown(
+                      value: _billDateFilter,
+                      icon: Icons.calendar_today_outlined,
+                      items: const {
+                        'ALL': 'Any date',
+                        'TODAY': 'Today',
+                        '7_DAYS': 'Last 7 days',
+                        '30_DAYS': 'Last 30 days',
+                      },
+                      onChanged: (value) => setState(() {
+                        _billDateFilter = value;
+                        _billPage = 0;
+                      }),
+                    );
+                    final sortFilter = _billFilterDropdown(
+                      value: _billSort,
+                      icon: Icons.swap_vert_rounded,
+                      items: const {
+                        'NEWEST': 'Newest first',
+                        'OLDEST': 'Oldest first',
+                      },
+                      onChanged: (value) => setState(() {
+                        _billSort = value;
+                        _billPage = 0;
+                      }),
+                    );
+                    if (constraints.maxWidth < 650) {
+                      return Column(
+                        children: [
+                          search,
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(child: dateFilter),
+                              const SizedBox(width: 10),
+                              Expanded(child: sortFilter),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(child: search),
+                        const SizedBox(width: 10),
+                        dateFilter,
+                        const SizedBox(width: 10),
+                        sortFilter,
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -4807,12 +5722,83 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
               child: Column(
                 children: [
                   _tableHeader(),
-                  if (_filteredBills.isEmpty)
-                    _emptyState('No bills match the selected status')
+                  if (pageBills.isEmpty)
+                    _emptyState('No bills match these filters')
                   else
-                    ..._filteredBills.map((bill) => _tableRow(bill)),
+                    ...pageBills.map((bill) => _tableRow(bill)),
                 ],
               ),
+            ),
+          ),
+          if (filteredBills.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Text(
+                  'Page ${safePage + 1} of $pageCount • ${pageBills.length} bills on this page',
+                  style: AppTextStyles.caption.copyWith(color: _textSecondary),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: safePage > 0
+                      ? () => setState(() => _billPage = safePage - 1)
+                      : null,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  tooltip: 'Previous page',
+                ),
+                IconButton(
+                  onPressed: safePage < pageCount - 1
+                      ? () => setState(() => _billPage = safePage + 1)
+                      : null,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  tooltip: 'Next page',
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _billFilterDropdown({
+    required String value,
+    required IconData icon,
+    required Map<String, String> items,
+    required ValueChanged<String> onChanged,
+  }) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17, color: _textSecondary),
+          const SizedBox(width: 7),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              dropdownColor: _surface,
+              style: AppTextStyles.caption.copyWith(
+                color: _textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+              items: items.entries
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item.key,
+                      child: Text(item.value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (next) {
+                if (next != null) onChanged(next);
+              },
             ),
           ),
         ],
@@ -5371,7 +6357,10 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
       child: ChoiceChip(
         label: Text(label),
         selected: isSelected,
-        onSelected: (_) => setState(() => _statusFilter = value),
+        onSelected: (_) => setState(() {
+          _statusFilter = value;
+          _billPage = 0;
+        }),
         selectedColor: AppColors.brandRed,
         backgroundColor: _surfaceSoft,
         labelStyle: AppTextStyles.caption.copyWith(
@@ -5710,6 +6699,12 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     return DateTime.tryParse(raw.toString());
   }
 
+  DateTime? _billSettlementDate(dynamic bill) {
+    final raw = bill['settledAt'] ?? bill['updatedAt'];
+    if (raw == null) return null;
+    return DateTime.tryParse(raw.toString());
+  }
+
   String _friendlyDate(dynamic bill) {
     final date = _billDate(bill);
     if (date == null) return '-';
@@ -5832,7 +6827,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
 
   double _averageDailyRevenue() {
     final revenue = _selectedReportRange == null
-        ? math.max(_weeklyReportRevenue, _totalRevenue)
+        ? _weeklyReportRevenue
         : _weeklyReportRevenue;
     final dayCount = _effectiveReportRange.duration.inDays + 1;
     return revenue / dayCount;
@@ -5846,15 +6841,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     }
 
     if (totals.isEmpty) {
-      if (_selectedReportRange != null) return [];
-      final base = math.max(_totalRevenue, _weeklyReportRevenue);
-      final amount = base <= 0 ? 1.0 : base;
-      totals.addAll({
-        'UPI': amount * 0.65,
-        'Net Banking': amount * 0.20,
-        'Card': amount * 0.10,
-        'Wallet': amount * 0.05,
-      });
+      return [];
     }
 
     final total = totals.values.fold(0.0, (sum, value) => sum + value);
@@ -5885,7 +6872,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   String _paymentMethodLabel(dynamic bill) {
     final raw = _readString(bill, 'paymentMethod').isNotEmpty
         ? _readString(bill, 'paymentMethod')
-        : _readString(bill, 'method', fallback: 'UPI');
+        : _readString(bill, 'method', fallback: 'Other');
     final normalized = raw.toLowerCase();
     if (normalized.contains('upi')) return 'UPI';
     if (normalized.contains('net')) return 'Net Banking';
@@ -5897,7 +6884,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   int _todayPaidCount() {
     final today = DateTime.now();
     return _paidBills.where((bill) {
-      final date = _billDate(bill);
+      final date = _billSettlementDate(bill);
       return date != null &&
           date.year == today.year &&
           date.month == today.month &&
@@ -5909,7 +6896,7 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
     final today = DateTime.now();
     return _paidBills
         .where((bill) {
-          final date = _billDate(bill);
+          final date = _billSettlementDate(bill);
           return date != null &&
               date.year == today.year &&
               date.month == today.month &&
@@ -5984,6 +6971,8 @@ class _MerchantDashboardState extends State<MerchantDashboard> {
   }
 
   String _merchantDisplayName() {
+    final businessName = _profileBusinessName?.trim();
+    if (businessName != null && businessName.isNotEmpty) return businessName;
     final name = ApiService.userName?.trim();
     if (name != null && name.isNotEmpty) return name;
     return 'Merchant ${_merchantId ?? ''}'.trim();
@@ -6018,9 +7007,10 @@ class _LivePulseDotState extends State<_LivePulseDot>
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     )..repeat(reverse: true);
-    _scale = Tween<double>(begin: 0.72, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scale = Tween<double>(
+      begin: 0.72,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -6036,10 +7026,7 @@ class _LivePulseDotState extends State<_LivePulseDot>
       child: Container(
         width: 8,
         height: 8,
-        decoration: BoxDecoration(
-          color: widget.color,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
       ),
     );
   }

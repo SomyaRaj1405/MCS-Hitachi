@@ -36,8 +36,12 @@ public class AuthService {
                 throw new RuntimeException("Merchant email already exists");
             }
             Merchant merchant = new Merchant();
+            if (request.getBusinessName() == null || request.getBusinessName().isBlank()) {
+                throw new RuntimeException("Business name is required for merchants");
+            }
             merchant.setName(request.getName());
             merchant.setEmail(request.getEmail());
+            merchant.setBusinessName(request.getBusinessName().trim());
             merchant.setPasswordHash(passwordEncoder.encode(request.getPassword()));
             merchant.setPhone(request.getPhone());
             merchantRepository.save(merchant);
@@ -93,6 +97,7 @@ public class AuthService {
                 put("name", merchant.getName());
                 put("email", merchant.getEmail());
                 put("phone", merchant.getPhone() == null ? "" : merchant.getPhone());
+                put("businessName", merchant.getBusinessName() == null ? merchant.getName() : merchant.getBusinessName());
                 put("role", "MERCHANT");
             }};
         } else {
@@ -102,17 +107,39 @@ public class AuthService {
                 put("id", customer.getId());
                 put("name", customer.getName());
                 put("email", customer.getEmail());
+                put("phone", customer.getPhone() == null ? "" : customer.getPhone());
                 put("role", "CUSTOMER");
             }};
         }
     }
 
-    public Map<String, Object> updateMerchantProfile(
+    public Map<String, Object> updateProfile(
             String currentEmail,
             String role,
             MerchantProfileUpdateRequest request) {
+        if ("CUSTOMER".equalsIgnoreCase(role)) {
+            Customer customer = customerRepository.findByEmail(currentEmail)
+                    .orElseThrow(() -> new RuntimeException("Customer not found"));
+            String newEmail = request.getEmail().trim().toLowerCase();
+            if (customerRepository.existsByEmailAndIdNot(newEmail, customer.getId())) {
+                throw new RuntimeException("Customer email already exists");
+            }
+            customer.setName(request.getName().trim());
+            customer.setEmail(newEmail);
+            customer.setPhone(normalizeOptional(request.getPhone()));
+            Customer saved = customerRepository.save(customer);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", saved.getId());
+            response.put("name", saved.getName());
+            response.put("email", saved.getEmail());
+            response.put("phone", saved.getPhone() == null ? "" : saved.getPhone());
+            response.put("role", "CUSTOMER");
+            response.put("token", jwtUtil.generateToken(saved.getEmail(), "CUSTOMER"));
+            return response;
+        }
         if (!"MERCHANT".equalsIgnoreCase(role)) {
-            throw new RuntimeException("Only merchant profiles can be updated here");
+            throw new RuntimeException("Unsupported account role");
         }
 
         Merchant merchant = merchantRepository.findByEmail(currentEmail)
@@ -125,6 +152,10 @@ public class AuthService {
         merchant.setName(request.getName().trim());
         merchant.setEmail(newEmail);
         merchant.setPhone(normalizeOptional(request.getPhone()));
+        if (request.getBusinessName() == null || request.getBusinessName().isBlank()) {
+            throw new RuntimeException("Business name is required for merchants");
+        }
+        merchant.setBusinessName(request.getBusinessName().trim());
         Merchant saved = merchantRepository.save(merchant);
 
         Map<String, Object> response = new HashMap<>();
@@ -132,6 +163,7 @@ public class AuthService {
         response.put("name", saved.getName());
         response.put("email", saved.getEmail());
         response.put("phone", saved.getPhone() == null ? "" : saved.getPhone());
+        response.put("businessName", saved.getBusinessName());
         response.put("role", "MERCHANT");
         response.put("token", jwtUtil.generateToken(saved.getEmail(), "MERCHANT"));
         return response;

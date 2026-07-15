@@ -13,8 +13,10 @@ import com.hitachi.mcs.repository.BillRepository;
 import com.hitachi.mcs.repository.SettlementRepository;
 import com.hitachi.mcs.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,15 +27,18 @@ public class TransactionService {
     private final BillRepository billRepository;
     private final SettlementRepository settlementRepository;
     private final TransactionEventProducer transactionEventProducer;
+    private final AuthorizationDecisionService authorizationDecisionService;
 
     public TransactionService(TransactionRepository transactionRepository,
                               BillRepository billRepository,
                               SettlementRepository settlementRepository,
-                              TransactionEventProducer transactionEventProducer) {
+                              TransactionEventProducer transactionEventProducer,
+                              AuthorizationDecisionService authorizationDecisionService) {
         this.transactionRepository = transactionRepository;
         this.billRepository = billRepository;
         this.settlementRepository = settlementRepository;
         this.transactionEventProducer = transactionEventProducer;
+        this.authorizationDecisionService = authorizationDecisionService;
     }
 
     public TransactionResponse initiateTransaction(InitiateTransactionRequest request) {
@@ -48,6 +53,7 @@ public class TransactionService {
         transaction.setBill(bill);
         transaction.setPaymentMethod(request.getPaymentMethod());
         transaction.setStatus("INITIATED");
+        transaction.setInitiatedAt(LocalDateTime.now());
 
         Transaction savedTransaction = transactionRepository.save(transaction);
         return mapToResponse(savedTransaction);
@@ -61,7 +67,8 @@ public class TransactionService {
             throw new RuntimeException("Only INITIATED transactions can be authorized");
         }
 
-        boolean success = Math.random() < 0.9;
+        boolean success = authorizationDecisionService.approve();
+        transaction.setAuthorizedAt(LocalDateTime.now());
 
         if (success) {
             transaction.setStatus("AUTHORIZED");
@@ -73,6 +80,7 @@ public class TransactionService {
         return mapToResponse(savedTransaction);
     }
 
+    @Transactional
     public TransactionResponse settleTransaction(SettleTransactionRequest request) {
         Transaction transaction = transactionRepository.findById(request.getTransactionId())
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
@@ -95,6 +103,7 @@ public class TransactionService {
         billRepository.save(bill);
 
         transaction.setStatus("SETTLED");
+        transaction.setSettledAt(LocalDateTime.now());
         Transaction savedTransaction = transactionRepository.save(transaction);
 
         // NEW — publish a "transaction completed" event to Kafka.
@@ -157,8 +166,13 @@ public class TransactionService {
         response.setPaymentMethod(transaction.getPaymentMethod());
         response.setStatus(transaction.getStatus());
         response.setBillStatus(bill.getStatus());
+        settlementRepository.findByTransactionId(transaction.getId())
+                .ifPresent(settlement -> response.setSettlementReference(settlement.getReferenceNumber()));
         response.setCreatedAt(transaction.getCreatedAt());
         response.setUpdatedAt(transaction.getUpdatedAt());
+        response.setInitiatedAt(transaction.getInitiatedAt());
+        response.setAuthorizedAt(transaction.getAuthorizedAt());
+        response.setSettledAt(transaction.getSettledAt());
 
         return response;
     }

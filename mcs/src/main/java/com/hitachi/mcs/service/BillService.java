@@ -108,11 +108,20 @@ public class BillService {
      * the controller can stream it back with a file download header.
      */
     public byte[] generateMerchantReportCsv(Long merchantId) {
-        List<Bill> bills = billRepository.findByMerchantId(merchantId);
+        return generateReportCsv(billRepository.findByMerchantId(merchantId));
+    }
 
+    public byte[] generateMerchantRefundReportCsv(Long merchantId) {
+        List<Bill> refunds = billRepository.findByMerchantId(merchantId).stream()
+                .filter(bill -> "REFUNDED".equalsIgnoreCase(bill.getStatus()))
+                .toList();
+        return generateReportCsv(refunds);
+    }
+
+    private byte[] generateReportCsv(List<Bill> bills) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (PrintWriter writer = new PrintWriter(out, true, StandardCharsets.UTF_8)) {
-            writer.println("Bill ID,Customer,Amount,Status,Payment Method,Description,Created At,Refunded At");
+            writer.println("Bill ID,Customer,Amount,Status,Payment Method,Description,Created At,Refunded At,Refund Reason");
 
             for (Bill bill : bills) {
                 writer.println(String.join(",",
@@ -123,7 +132,8 @@ public class BillService {
                         csvEscape(bill.getPaymentMethod() != null ? bill.getPaymentMethod() : "N/A"),
                         csvEscape(bill.getDescription() != null ? bill.getDescription() : ""),
                         bill.getCreatedAt() != null ? bill.getCreatedAt().format(CSV_DATE_FORMAT) : "",
-                        bill.getRefundedAt() != null ? bill.getRefundedAt().format(CSV_DATE_FORMAT) : ""
+                        bill.getRefundedAt() != null ? bill.getRefundedAt().format(CSV_DATE_FORMAT) : "",
+                        csvEscape(bill.getRefundReason() != null ? bill.getRefundReason() : "")
                 ));
             }
         }

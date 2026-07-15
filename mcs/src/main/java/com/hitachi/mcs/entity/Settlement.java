@@ -15,7 +15,7 @@ public class Settlement {
     private Long id;
 
     @OneToOne
-    @JoinColumn(name = "transaction_id", nullable = false)
+    @JoinColumn(name = "transaction_id", nullable = false, unique = true)
     private Transaction transaction;
 
     @Column(name = "settled_amount", nullable = false, precision = 10, scale = 2)
@@ -27,8 +27,22 @@ public class Settlement {
     @Column(name = "settled_at")
     private LocalDateTime settledAt;
 
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
     @PrePersist
     protected void onCreate() {
-        settledAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        settledAt = now;
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
     }
 }

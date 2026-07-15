@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../../widgets/ai_chat_widget.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/api_service.dart';
@@ -19,11 +20,16 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   int? _customerId;
   String? _errorMessage;
   String _activeSection = 'dashboard';
-  String _statusFilter = 'ALL';
+  String _statusFilter = 'PENDING';
   String _historyFilter = 'ALL';
+  String _billQuery = '';
+  String _historyQuery = '';
+  String _billDateFilter = 'ALL';
+  String _historyDateFilter = 'ALL';
   String _searchQuery = '';
   String? _clearedNotificationBillId;
   bool _isDarkMode = false;
+  String? _profilePhone;
   late final AnimationController _pulseController;
   late final TextEditingController _searchController;
 
@@ -71,6 +77,7 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       duration: const Duration(milliseconds: 4200),
     )..repeat();
     _loadBills();
+    _loadCustomerProfile();
   }
 
   @override
@@ -114,6 +121,178 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     );
   }
 
+  Future<void> _loadCustomerProfile() async {
+    try {
+      final response = await ApiService.get('/auth/me');
+      if (!mounted || response is! Map) return;
+      setState(() {
+        ApiService.setUserProfile(
+          name: response['name']?.toString(),
+          email: response['email']?.toString(),
+        );
+        _profilePhone = response['phone']?.toString();
+      });
+    } catch (_) {
+      // The login identity remains available if refreshing the profile fails.
+    }
+  }
+
+  Future<void> _showCustomerProfileEditor() async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController(text: _customerDisplayName());
+    final emailController = TextEditingController(
+      text: ApiService.userEmail ?? '',
+    );
+    final phoneController = TextEditingController(text: _profilePhone ?? '');
+    var isSaving = false;
+    String? saveError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: _surface,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Customer Profile',
+            style: AppTextStyles.sectionTitle.copyWith(color: _textPrimary),
+          ),
+          content: SizedBox(
+            width: 460,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      decoration: _customerProfileDecoration(
+                        'Full name',
+                        Icons.person_outline_rounded,
+                      ),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'Enter your name'
+                          : null,
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: _customerProfileDecoration(
+                        'Email address',
+                        Icons.email_outlined,
+                      ),
+                      validator: (value) {
+                        final email = value?.trim() ?? '';
+                        if (!RegExp(
+                          r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                        ).hasMatch(email)) {
+                          return 'Enter a valid email address';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: _customerProfileDecoration(
+                        'Phone number',
+                        Icons.phone_outlined,
+                      ),
+                      validator: (value) {
+                        final phone = value?.trim() ?? '';
+                        return RegExp(r'^\d{10}$').hasMatch(phone)
+                            ? null
+                            : 'Enter exactly 10 digits';
+                      },
+                    ),
+                    if (saveError != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        saveError!,
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (!(formKey.currentState?.validate() ?? false)) return;
+                      setDialogState(() => isSaving = true);
+                      try {
+                        final response = await ApiService.put('/auth/me', {
+                          'name': nameController.text.trim(),
+                          'email': emailController.text.trim(),
+                          'phone': phoneController.text.trim(),
+                        });
+                        if (response is! Map) {
+                          throw Exception('Invalid profile response');
+                        }
+                        final token = response['token']?.toString();
+                        if (token != null && token.isNotEmpty) {
+                          ApiService.setToken(token);
+                        }
+                        ApiService.setUserProfile(
+                          name: response['name']?.toString(),
+                          email: response['email']?.toString(),
+                        );
+                        if (mounted) {
+                          setState(
+                            () => _profilePhone = response['phone']?.toString(),
+                          );
+                        }
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      } catch (error) {
+                        setDialogState(() {
+                          isSaving = false;
+                          saveError = error.toString().replaceFirst(
+                            'Exception: ',
+                            '',
+                          );
+                        });
+                      }
+                    },
+              icon: const Icon(Icons.save_outlined, size: 18),
+              label: Text(isSaving ? 'Saving...' : 'Save profile'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nameController.dispose();
+    emailController.dispose();
+    phoneController.dispose();
+  }
+
+  InputDecoration _customerProfileDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon),
+      filled: true,
+      fillColor: _surfaceSoft,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+    );
+  }
+
   Future<void> _openPayment(dynamic bill) async {
     final openedBillId = _billId(bill);
     final wasLatestPending =
@@ -147,13 +326,25 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         return dateB.compareTo(dateA);
       });
 
-    final query = _searchQuery.trim().toLowerCase();
+    final query = (_billQuery.trim().isNotEmpty ? _billQuery : _searchQuery)
+        .trim()
+        .toLowerCase();
+    final now = DateTime.now();
     final byStatus = _statusFilter == 'ALL'
         ? sorted
         : sorted.where((bill) => _billStatus(bill) == _statusFilter).toList();
 
-    if (query.isEmpty) return byStatus;
     return byStatus.where((bill) {
+      final date = _billDate(bill);
+      final matchesDate = switch (_billDateFilter) {
+        '7_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 7))),
+        '30_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 30))),
+        '90_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 90))),
+        _ => true,
+      };
       final haystack = [
         _billId(bill),
         _merchantName(bill),
@@ -161,7 +352,7 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         _billStatus(bill),
         _money(_amount(bill)),
       ].join(' ').toLowerCase();
-      return haystack.contains(query);
+      return matchesDate && (query.isEmpty || haystack.contains(query));
     }).toList();
   }
 
@@ -171,10 +362,13 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       _bills.where((bill) => _billStatus(bill) == 'PAID').toList();
   List<dynamic> get _failedBills =>
       _bills.where((bill) => _billStatus(bill) == 'FAILED').toList();
+  List<dynamic> get _refundedBills =>
+      _bills.where((bill) => _billStatus(bill) == 'REFUNDED').toList();
 
   int get _pendingCount => _pendingBills.length;
   int get _paidCount => _paidBills.length;
   int get _failedCount => _failedBills.length;
+  int get _refundedCount => _refundedBills.length;
   double get _outstandingAmount =>
       _pendingBills.fold(0.0, (sum, bill) => sum + _amount(bill));
   double get _paidAmount =>
@@ -200,10 +394,28 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     final history =
         _bills.where((bill) => _billStatus(bill) != 'PENDING').toList()
           ..sort(_sortNewestFirst);
-    if (_historyFilter == 'ALL') return history;
-    return history
-        .where((bill) => _billStatus(bill) == _historyFilter)
-        .toList();
+    final now = DateTime.now();
+    final query = _historyQuery.trim().toLowerCase();
+    return history.where((bill) {
+      final date = _billDate(bill);
+      final matchesStatus =
+          _historyFilter == 'ALL' || _billStatus(bill) == _historyFilter;
+      final matchesDate = switch (_historyDateFilter) {
+        '7_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 7))),
+        '30_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 30))),
+        '90_DAYS' =>
+          date != null && date.isAfter(now.subtract(const Duration(days: 90))),
+        _ => true,
+      };
+      final searchable =
+          '${_billId(bill)} ${_merchantName(bill)} ${_readString(bill, 'description')} ${_money(_amount(bill))}'
+              .toLowerCase();
+      return matchesStatus &&
+          matchesDate &&
+          (query.isEmpty || searchable.contains(query));
+    }).toList();
   }
 
   @override
@@ -297,42 +509,60 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     }
 
     return [
-      if (isCompact) ...[
-        _pageHeader(),
-        const SizedBox(height: 18),
-      ],
-      _overviewHeader(),
-      const SizedBox(height: 14),
+      _pageHeader(),
+      const SizedBox(height: 22),
       _summaryGrid(isCompact: isCompact),
-      const SizedBox(height: 16),
+      const SizedBox(height: 22),
       if (isCompact) ...[
-        _paymentHero(),
-        const SizedBox(height: 16),
-        _quickPayPanel(),
-        const SizedBox(height: 16),
         _paymentTrendPanel(),
+        const SizedBox(height: 16),
+        _recentHistoryPanel(),
         const SizedBox(height: 16),
         _statusPanel(),
         const SizedBox(height: 16),
-        _recentHistoryPanel(),
+        _customerInsightStrip(isCompact: true),
+        const SizedBox(height: 16),
+        _quickPayPanel(),
+        const SizedBox(height: 16),
+        _paymentHero(),
       ] else ...[
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(flex: 8, child: _paymentHero()),
+            Expanded(
+              flex: 8,
+              child: Column(
+                children: [
+                  _paymentTrendPanel(),
+                  const SizedBox(height: 20),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 4, child: _statusPanel()),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        flex: 7,
+                        child: _customerInsightStrip(
+                          isCompact: false,
+                          contentHeight: 236,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(width: 18),
-            Expanded(flex: 4, child: _quickPayPanel()),
-          ],
-        ),
-        const SizedBox(height: 20),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(flex: 12, child: _paymentTrendPanel()),
-            const SizedBox(width: 18),
-            Expanded(flex: 7, child: _statusPanel()),
-            const SizedBox(width: 18),
-            Expanded(flex: 8, child: _recentHistoryPanel()),
+            Expanded(
+              flex: 5,
+              child: Column(
+                children: [
+                  _recentHistoryPanel(height: 444, itemLimit: 7),
+                  const SizedBox(height: 20),
+                  _quickPayPanel(contentHeight: 136),
+                ],
+              ),
+            ),
           ],
         ),
       ],
@@ -409,7 +639,7 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                     _activeSection == 'bills',
                     () => setState(() {
                       _activeSection = 'bills';
-                      _statusFilter = 'ALL';
+                      _statusFilter = 'PENDING';
                     }),
                   ),
                   _navTile(
@@ -418,7 +648,190 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                     _activeSection == 'history',
                     () => setState(() => _activeSection = 'history'),
                   ),
+                  const SizedBox(height: 22),
+                  _sidebarAccountSnapshot(),
                 ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _border),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: _brandStrong,
+                    child: Text(
+                      _customerInitials(),
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _customerDisplayName(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption.copyWith(
+                            color: _textPrimary,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'Customer account #${_customerId ?? '-'}',
+                          style: AppTextStyles.caption.copyWith(
+                            color: _textMuted,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: TextButton.icon(
+              onPressed: _logout,
+              style: TextButton.styleFrom(
+                foregroundColor: _textSecondary,
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text('Log out'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sidebarAccountSnapshot() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surfaceSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 36,
+                width: 36,
+                decoration: BoxDecoration(
+                  color: (_pendingCount == 0 ? _successStrong : _brandStrong)
+                      .withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(
+                  _pendingCount == 0
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.schedule_rounded,
+                  color: _pendingCount == 0 ? _successStrong : _brandStrong,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Account snapshot',
+                  style: AppTextStyles.caption.copyWith(
+                    color: _textPrimary,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Outstanding',
+                      style: AppTextStyles.caption.copyWith(
+                        color: _textMuted,
+                        fontSize: 10,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _money(_outstandingAmount),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.body.copyWith(
+                        color: _textPrimary,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(height: 32, width: 1, color: _border),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pending',
+                      style: AppTextStyles.caption.copyWith(
+                        color: _textMuted,
+                        fontSize: 10,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$_pendingCount bills',
+                      style: AppTextStyles.body.copyWith(
+                        color: _textPrimary,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _pendingCount == 0
+                  ? 'Everything is up to date.'
+                  : '$_pendingCount payment${_pendingCount == 1 ? '' : 's'} need attention.',
+              style: AppTextStyles.caption.copyWith(
+                color: _pendingCount == 0 ? _successStrong : _brandStrong,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -819,47 +1232,116 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         side: BorderSide(color: _border),
       ),
       onSelected: (value) {
-        if (value == 'logout') _logout();
+        if (value == 'profile') {
+          _showCustomerProfileEditor();
+        }
+        if (value == 'logout') {
+          _logout();
+        }
       },
       itemBuilder: (context) => [
         PopupMenuItem(
           enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: AppTextStyles.cardTitle.copyWith(color: _textPrimary),
-              ),
-              Text(
-                email,
-                style: AppTextStyles.caption.copyWith(color: _textSecondary),
-              ),
-              Text(
-                'Customer ID $customerId',
-                style: AppTextStyles.caption.copyWith(color: _textMuted),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Container(
+            width: 270,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _isDarkMode
+                  ? const Color(0xFF35262E)
+                  : const Color(0xFFFFF2F3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _brandStrong.withValues(alpha: .15)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: _brandStrong,
+                  child: Text(
+                    _customerInitials(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.cardTitle.copyWith(
+                          color: _textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Personal account • $customerId',
+                        style: AppTextStyles.caption.copyWith(
+                          color: _brandStrong,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          color: _textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
+          value: 'profile',
+          child: Row(
+            children: [
+              Icon(
+                Icons.manage_accounts_outlined,
+                color: _textSecondary,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              const Text('Edit profile'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
           value: 'logout',
-          child: Text(
-            'Logout',
-            style: AppTextStyles.body.copyWith(
-              color: AppColors.error,
-              fontWeight: FontWeight.w700,
-            ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.logout_rounded,
+                color: AppColors.error,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Sign out',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
       ],
       child: Container(
-        height: 48,
-        padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
+        height: 52,
+        padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
         decoration: BoxDecoration(
           color: _surface,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: _border),
           boxShadow: _isDarkMode
               ? []
@@ -875,21 +1357,21 @@ class _CustomerDashboardState extends State<CustomerDashboard>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 34,
-              width: 34,
+              height: 40,
+              width: 40,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: _isDarkMode
-                    ? const Color(0xFF24392F)
-                    : const Color(0xFFEAF7F0),
-                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [_brandStrong, const Color(0xFFE60012)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(9),
               ),
               child: Text(
                 _customerInitials(),
                 style: AppTextStyles.caption.copyWith(
-                  color: _isDarkMode
-                      ? const Color(0xFF9FF0C4)
-                      : const Color(0xFF0D8D53),
+                  color: Colors.white,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -902,17 +1384,17 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    email,
+                    name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.caption.copyWith(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
                       height: 1.15,
                       color: _textPrimary,
                     ),
                   ),
                   Text(
-                    '$name - Customer $customerId',
+                    'Customer account  $customerId',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.caption.copyWith(
@@ -923,16 +1405,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            Container(
-              height: 24,
-              width: 24,
-              decoration: BoxDecoration(
-                color: _surfaceSoft,
-                shape: BoxShape.circle,
-                border: Border.all(color: _border),
-              ),
-              child: Icon(Icons.add_rounded, size: 15, color: _textSecondary),
+            const SizedBox(width: 12),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 20,
+              color: _textSecondary,
             ),
           ],
         ),
@@ -949,7 +1426,7 @@ class _CustomerDashboardState extends State<CustomerDashboard>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Welcome back, ${_customerDisplayName()}',
+                '${_greeting()}, ${_customerDisplayName()}!',
                 style: AppTextStyles.heading.copyWith(color: _textPrimary),
               ),
               const SizedBox(height: 4),
@@ -976,46 +1453,6 @@ class _CustomerDashboardState extends State<CustomerDashboard>
             icon: const Icon(Icons.payment_rounded, size: 18),
             label: const Text('Pay Next Bill'),
           ),
-      ],
-    );
-  }
-
-  Widget _overviewHeader() {
-    return Row(
-      children: [
-        Text(
-          'Overview',
-          style: AppTextStyles.sectionTitle.copyWith(
-            color: _textPrimary,
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.calendar_today_rounded, size: 15, color: _textMuted),
-              const SizedBox(width: 8),
-              Text(
-                _formatLongDate(DateTime.now()),
-                style: AppTextStyles.caption.copyWith(
-                  color: _textSecondary,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.expand_more_rounded, size: 17, color: _textMuted),
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -1259,7 +1696,7 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     );
   }
 
-  Widget _quickPayPanel() {
+  Widget _quickPayPanel({double contentHeight = 156}) {
     final bill = _nextPendingBill;
 
     return _panel(
@@ -1272,7 +1709,7 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         ),
       ),
       child: SizedBox(
-        height: 156,
+        height: contentHeight,
         child: bill == null
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1401,6 +1838,21 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   Widget _summaryGrid({required bool isCompact}) {
     final totalBills = _bills.length;
     final successRate = totalBills == 0 ? 100 : (_paidCount / totalBills * 100);
+    final now = DateTime.now();
+    final billsThisMonth = _bills.where((bill) {
+      final date = _billDate(bill);
+      return date != null && date.year == now.year && date.month == now.month;
+    }).toList();
+    final paidThisMonth = billsThisMonth
+        .where((bill) => _billStatus(bill) == 'PAID')
+        .toList();
+    final pendingThisMonth = billsThisMonth
+        .where((bill) => _billStatus(bill) == 'PENDING')
+        .length;
+    final spentThisMonth = paidThisMonth.fold<double>(
+      0,
+      (sum, bill) => sum + _amount(bill),
+    );
     final cards = [
       _summaryCard(
         title: 'Outstanding Due',
@@ -1413,16 +1865,16 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         featured: true,
       ),
       _summaryCard(
-        title: 'Bills Tracked',
-        value: totalBills.toString(),
-        caption: '${_filteredBills.length} visible now',
+        title: 'Bills This Month',
+        value: billsThisMonth.length.toString(),
+        caption: '${paidThisMonth.length} paid  •  $pendingThisMonth pending',
         color: const Color(0xFF395B8F),
         icon: Icons.receipt_long_rounded,
       ),
       _summaryCard(
-        title: 'Paid Value',
-        value: _money(_paidAmount),
-        caption: '$_paidCount completed',
+        title: 'Spent This Month',
+        value: _money(spentThisMonth),
+        caption: '${paidThisMonth.length} successful payments',
         color: _successStrong,
         icon: Icons.check_circle_outline_rounded,
       ),
@@ -1457,6 +1909,186 @@ class _CustomerDashboardState extends State<CustomerDashboard>
           if (i != cards.length - 1) const SizedBox(width: 16),
         ],
       ],
+    );
+  }
+
+  Widget _customerInsightStrip({
+    required bool isCompact,
+    double? contentHeight,
+  }) {
+    final now = DateTime.now();
+    final paidThisMonth = _paidBills.where((bill) {
+      final date = _billDate(bill);
+      return date != null && date.year == now.year && date.month == now.month;
+    }).toList();
+    final monthSpend = paidThisMonth.fold<double>(
+      0,
+      (sum, bill) => sum + _amount(bill),
+    );
+    final averagePayment = _paidBills.isEmpty
+        ? 0.0
+        : _paidAmount / _paidBills.length;
+    final merchants = <String, int>{};
+    for (final bill in _paidBills) {
+      final merchant = _merchantName(bill);
+      merchants[merchant] = (merchants[merchant] ?? 0) + 1;
+    }
+    final frequentMerchant = merchants.isEmpty
+        ? 'No payments yet'
+        : (merchants.entries.toList()
+                ..sort((a, b) => b.value.compareTo(a.value)))
+              .first
+              .key;
+    final insights = [
+      (
+        'Spent this month',
+        _money(monthSpend),
+        Icons.calendar_month_rounded,
+        _brandStrong,
+      ),
+      (
+        'Average payment',
+        _money(averagePayment),
+        Icons.analytics_outlined,
+        const Color(0xFF395B8F),
+      ),
+      (
+        'Most frequent merchant',
+        frequentMerchant,
+        Icons.storefront_outlined,
+        _successStrong,
+      ),
+    ];
+
+    return _panel(
+      title: 'Payment Insights',
+      trailing: Text(
+        'Updated from your bill activity',
+        style: AppTextStyles.caption.copyWith(color: _textMuted),
+      ),
+      child: SizedBox(
+        height: contentHeight,
+        child: isCompact
+            ? Column(
+                children: insights
+                    .map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _insightItem(item.$1, item.$2, item.$3, item.$4),
+                      ),
+                    )
+                    .toList(),
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < insights.length; i++) ...[
+                    Expanded(
+                      child: _insightItem(
+                        insights[i].$1,
+                        insights[i].$2,
+                        insights[i].$3,
+                        insights[i].$4,
+                        vertical: true,
+                      ),
+                    ),
+                    if (i != insights.length - 1) const SizedBox(width: 12),
+                  ],
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _insightItem(
+    String label,
+    String value,
+    IconData icon,
+    Color color, {
+    bool vertical = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _surfaceSoft,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _border),
+      ),
+      child: vertical
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 42,
+                  width: 42,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(icon, color: color, size: 21),
+                ),
+                const Spacer(),
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption.copyWith(
+                    color: _textSecondary,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.cardTitle.copyWith(
+                    color: _textPrimary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Container(
+                  height: 40,
+                  width: 40,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: AppTextStyles.caption.copyWith(
+                          color: _textSecondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.cardTitle.copyWith(
+                          color: _textPrimary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -1640,9 +2272,17 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   Widget _paymentTrendPanel() {
     final points = _paymentTrendPoints();
     final total = points.fold<double>(0, (sum, point) => sum + point.value);
+    final activeDays = points.where((point) => point.value > 0).length;
+    final average = activeDays == 0 ? 0.0 : total / activeDays;
+    final highest = points.fold<double>(
+      0,
+      (maximum, point) => point.value > maximum ? point.value : maximum,
+    );
+    final chartMax = highest <= 0 ? 1000.0 : highest * 1.22;
+    final interval = chartMax / 4;
 
     return _panel(
-      title: 'Payment Trend',
+      title: 'Spending Overview',
       trailing: Text(
         'Last 7 days',
         style: AppTextStyles.caption.copyWith(
@@ -1651,53 +2291,195 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         ),
       ),
       child: SizedBox(
-        height: 236,
+        height: 344,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _money(total),
-              style: AppTextStyles.heading.copyWith(
-                color: _textPrimary,
-                fontSize: 30,
-                fontWeight: FontWeight.w900,
-              ),
+            Wrap(
+              spacing: 28,
+              runSpacing: 12,
+              children: [
+                _trendMetric('7-day total', _money(total), emphasized: true),
+                _trendMetric('Average / active day', _money(average)),
+                _trendMetric('Payment days', '$activeDays of 7'),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Settled payments across recent bill activity',
-              style: AppTextStyles.caption.copyWith(color: _textSecondary),
-            ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             Expanded(
-              child: CustomPaint(
-                size: Size.infinite,
-                painter: _CustomerTrendPainter(
-                  points: points,
-                  barColor: _brandStrong,
-                  paidColor: _successStrong,
-                  gridColor: _border,
-                  labelColor: _textMuted,
+              child: LineChart(
+                LineChartData(
+                  minX: 0,
+                  maxX: 6,
+                  minY: 0,
+                  maxY: chartMax,
+                  lineTouchData: LineTouchData(
+                    enabled: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      tooltipRoundedRadius: 8,
+                      getTooltipItems: (touchedSpots) =>
+                          touchedSpots.map((spot) {
+                            final point = points[spot.x.toInt()];
+                            return LineTooltipItem(
+                              '${point.label}\n${_money(point.value)}',
+                              AppTextStyles.caption.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                height: 1.5,
+                              ),
+                            );
+                          }).toList(),
+                    ),
+                  ),
+                  gridData: FlGridData(
+                    drawVerticalLine: false,
+                    horizontalInterval: interval,
+                    getDrawingHorizontalLine: (_) => FlLine(
+                      color: _border.withValues(alpha: 0.85),
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 58,
+                        interval: interval,
+                        getTitlesWidget: (value, meta) => SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          child: Text(
+                            _compactMoney(value),
+                            style: AppTextStyles.caption.copyWith(
+                              color: _textMuted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 34,
+                        getTitlesWidget: (value, meta) {
+                          if (value != value.roundToDouble()) {
+                            return const SizedBox.shrink();
+                          }
+                          final index = value.toInt();
+                          if (index < 0 || index >= points.length) {
+                            return const SizedBox.shrink();
+                          }
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            space: 10,
+                            child: Text(
+                              points[index].label,
+                              style: AppTextStyles.caption.copyWith(
+                                color: _textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: [
+                        for (var i = 0; i < points.length; i++)
+                          FlSpot(i.toDouble(), points[i].value),
+                      ],
+                      isCurved: true,
+                      curveSmoothness: 0.22,
+                      preventCurveOverShooting: true,
+                      preventCurveOvershootingThreshold: chartMax * 0.08,
+                      color: _brandStrong,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, bar, index) =>
+                            FlDotCirclePainter(
+                              radius: 4,
+                              color: _brandStrong,
+                              strokeWidth: 2,
+                              strokeColor: _surface,
+                            ),
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          colors: [
+                            _brandStrong.withValues(alpha: 0.22),
+                            _brandStrong.withValues(alpha: 0.01),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+            if (activeDays == 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'No settled payments in this period.',
+                  style: AppTextStyles.caption.copyWith(color: _textMuted),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _recentHistoryPanel() {
-    final recent = _historyBills.take(4).toList();
+  Widget _trendMetric(String label, String value, {bool emphasized = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(
+            color: _textMuted,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: AppTextStyles.heading.copyWith(
+            color: emphasized ? _textPrimary : _textSecondary,
+            fontSize: emphasized ? 27 : 17,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _recentHistoryPanel({double height = 236, int itemLimit = 4}) {
+    final recent = _historyBills.take(itemLimit).toList();
 
     return _panel(
-      title: 'Recent Activity',
+      title: 'Recent Transactions',
       trailing: TextButton(
         onPressed: () => setState(() => _activeSection = 'history'),
         child: const Text('View all'),
       ),
       child: SizedBox(
-        height: 236,
+        height: height,
         child: recent.isEmpty
             ? _miniEmpty(
                 icon: Icons.history_rounded,
@@ -1824,7 +2606,14 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _historyFilterChips(),
+          _customerFilterBar(
+            queryHint: 'Search merchant, bill ID or amount',
+            onQueryChanged: (value) => setState(() => _historyQuery = value),
+            dateValue: _historyDateFilter,
+            onDateChanged: (value) =>
+                setState(() => _historyDateFilter = value),
+            chips: _historyFilterChips(),
+          ),
           const SizedBox(height: 16),
           if (_historyBills.isEmpty)
             _miniEmpty(
@@ -1887,6 +2676,108 @@ class _CustomerDashboardState extends State<CustomerDashboard>
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+
+  Widget _customerFilterBar({
+    required String queryHint,
+    required ValueChanged<String> onQueryChanged,
+    required String dateValue,
+    required ValueChanged<String> onDateChanged,
+    required Widget chips,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _surfaceSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _border),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 270,
+            height: 42,
+            child: TextField(
+              onChanged: onQueryChanged,
+              style: AppTextStyles.body.copyWith(color: _textPrimary),
+              decoration: InputDecoration(
+                hintText: queryHint,
+                hintStyle: AppTextStyles.caption.copyWith(color: _textMuted),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: 19,
+                  color: _textSecondary,
+                ),
+                filled: true,
+                fillColor: _surface,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _border),
+                ),
+              ),
+            ),
+          ),
+          chips,
+          Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 17,
+                  color: _textSecondary,
+                ),
+                const SizedBox(width: 7),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: dateValue,
+                    dropdownColor: _surface,
+                    style: AppTextStyles.caption.copyWith(
+                      color: _textPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'ALL', child: Text('Any date')),
+                      DropdownMenuItem(
+                        value: '7_DAYS',
+                        child: Text('Last 7 days'),
+                      ),
+                      DropdownMenuItem(
+                        value: '30_DAYS',
+                        child: Text('Last 30 days'),
+                      ),
+                      DropdownMenuItem(
+                        value: '90_DAYS',
+                        child: Text('Last 90 days'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) onDateChanged(value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2029,7 +2920,13 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       ),
       child: Column(
         children: [
-          _filterChips(),
+          _customerFilterBar(
+            queryHint: 'Search merchant, bill ID or description',
+            onQueryChanged: (value) => setState(() => _billQuery = value),
+            dateValue: _billDateFilter,
+            onDateChanged: (value) => setState(() => _billDateFilter = value),
+            chips: _filterChips(),
+          ),
           const SizedBox(height: 14),
           if (_filteredBills.isEmpty)
             _miniEmpty(
@@ -2264,33 +3161,72 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     final total = _bills.isEmpty ? 1 : _bills.length;
 
     return _panel(
-      title: 'Payment Status',
+      title: 'Bill Status',
       child: SizedBox(
         height: 236,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
-              height: 82,
-              width: 82,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: _paidCount / total),
-                duration: const Duration(milliseconds: 700),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, _) => CircularProgressIndicator(
-                  value: value,
-                  strokeWidth: 8,
-                  backgroundColor: _surfaceSoft,
-                  valueColor: AlwaysStoppedAnimation<Color>(_successStrong),
-                ),
+              height: 70,
+              width: 70,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: _paidCount / total),
+                    duration: const Duration(milliseconds: 700),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, value, _) => SizedBox.expand(
+                      child: CircularProgressIndicator(
+                        value: value,
+                        strokeWidth: 8,
+                        backgroundColor: _surfaceSoft,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          _successStrong,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${_bills.length}',
+                        style: AppTextStyles.cardTitle.copyWith(
+                          color: _textPrimary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        'Bills',
+                        style: AppTextStyles.caption.copyWith(
+                          color: _textMuted,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             _statusRow('Pending', _pendingCount, total, _brandStrong),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             _statusRow('Paid', _paidCount, total, _successStrong),
-            const SizedBox(height: 12),
-            _statusRow('Failed', _failedCount, total, _warningStrong),
+            if (_failedCount > 0) ...[
+              const SizedBox(height: 8),
+              _statusRow('Failed', _failedCount, total, _warningStrong),
+            ],
+            if (_refundedCount > 0) ...[
+              const SizedBox(height: 8),
+              _statusRow(
+                'Refunded',
+                _refundedCount,
+                total,
+                const Color(0xFF6D5BD0),
+              ),
+            ],
           ],
         ),
       ),
@@ -2413,7 +3349,7 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _border),
         boxShadow: _panelShadow,
       ),
@@ -2534,29 +3470,23 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   }
 
   List<_CustomerTrendPoint> _paymentTrendPoints() {
-    const labels = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'];
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final now = DateTime.now();
     final points = <_CustomerTrendPoint>[];
 
     for (var i = 6; i >= 0; i--) {
       final day = DateTime(now.year, now.month, now.day - i);
-      final amount = _paidBills.where((bill) {
-        final date = _billDate(bill);
-        return date != null &&
-            date.year == day.year &&
-            date.month == day.month &&
-            date.day == day.day;
-      }).fold<double>(0, (sum, bill) => sum + _amount(bill));
+      final amount = _paidBills
+          .where((bill) {
+            final date = _billSettlementDate(bill);
+            return date != null &&
+                date.year == day.year &&
+                date.month == day.month &&
+                date.day == day.day;
+          })
+          .fold<double>(0, (sum, bill) => sum + _amount(bill));
 
-      points.add(_CustomerTrendPoint(labels[6 - i], amount));
-    }
-
-    if (points.every((point) => point.value == 0) && _paidAmount > 0) {
-      final average = _paidAmount / 7;
-      return [
-        for (var i = 0; i < labels.length; i++)
-          _CustomerTrendPoint(labels[i], average * (0.68 + (i % 4) * 0.14)),
-      ];
+      points.add(_CustomerTrendPoint(labels[day.weekday - 1], amount));
     }
 
     return points;
@@ -2607,6 +3537,12 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     return DateTime.tryParse(raw.toString());
   }
 
+  DateTime? _billSettlementDate(dynamic bill) {
+    if (bill is! Map) return null;
+    final raw = bill['settledAt'] ?? bill['updatedAt'];
+    return raw == null ? null : DateTime.tryParse(raw.toString());
+  }
+
   String _friendlyDate(dynamic bill) {
     final date = _billDate(bill);
     if (date == null) return '-';
@@ -2619,32 +3555,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
-  String _formatLongDate(DateTime date) {
-    const weekdays = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    return '${weekdays[date.weekday - 1]}, ${date.day} ${months[date.month - 1]} ${date.year}';
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   }
 
   String _readString(dynamic map, String key, {String fallback = ''}) {
@@ -2665,6 +3580,19 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
     return '\u20B9${buffer.toString().split('').reversed.join()}';
   }
+
+  String _compactMoney(double value) {
+    if (value >= 10000000) {
+      return '\u20B9${(value / 10000000).toStringAsFixed(value >= 100000000 ? 0 : 1)}Cr';
+    }
+    if (value >= 100000) {
+      return '\u20B9${(value / 100000).toStringAsFixed(value >= 1000000 ? 0 : 1)}L';
+    }
+    if (value >= 1000) {
+      return '\u20B9${(value / 1000).toStringAsFixed(value >= 10000 ? 0 : 1)}K';
+    }
+    return '\u20B9${value.round()}';
+  }
 }
 
 class _CustomerTrendPoint {
@@ -2672,102 +3600,6 @@ class _CustomerTrendPoint {
   final double value;
 
   const _CustomerTrendPoint(this.label, this.value);
-}
-
-class _CustomerTrendPainter extends CustomPainter {
-  final List<_CustomerTrendPoint> points;
-  final Color barColor;
-  final Color paidColor;
-  final Color gridColor;
-  final Color labelColor;
-
-  const _CustomerTrendPainter({
-    required this.points,
-    required this.barColor,
-    required this.paidColor,
-    required this.gridColor,
-    required this.labelColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.isEmpty) return;
-
-    final chartHeight = size.height - 28;
-    final maxValue = points
-        .map((point) => point.value)
-        .fold<double>(0, (max, value) => value > max ? value : max);
-    final safeMax = maxValue <= 0 ? 1.0 : maxValue;
-    final gap = size.width / points.length;
-    final barWidth = gap * 0.34;
-
-    final gridPaint = Paint()
-      ..color = gridColor.withValues(alpha: 0.80)
-      ..strokeWidth = 1;
-    for (var i = 0; i < 4; i++) {
-      final y = chartHeight * i / 3;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    final linePath = Path();
-    for (var i = 0; i < points.length; i++) {
-      final x = gap * i + gap / 2;
-      final normalized = points[i].value / safeMax;
-      final barHeight = normalized <= 0 ? chartHeight * 0.08 : chartHeight * normalized;
-      final top = chartHeight - barHeight;
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - barWidth / 2, top, barWidth, barHeight),
-        Radius.circular(barWidth / 2),
-      );
-      final shader = LinearGradient(
-        colors: [barColor.withValues(alpha: 0.95), paidColor],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(rect.outerRect);
-      canvas.drawRRect(rect, Paint()..shader = shader);
-
-      if (i == 0) {
-        linePath.moveTo(x, top);
-      } else {
-        linePath.lineTo(x, top);
-      }
-
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: points[i].label,
-          style: TextStyle(
-            color: labelColor,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      textPainter.paint(
-        canvas,
-        Offset(x - textPainter.width / 2, chartHeight + 10),
-      );
-    }
-
-    canvas.drawPath(
-      linePath,
-      Paint()
-        ..color = barColor.withValues(alpha: 0.36)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _CustomerTrendPainter oldDelegate) {
-    return oldDelegate.points != points ||
-        oldDelegate.barColor != barColor ||
-        oldDelegate.paidColor != paidColor ||
-        oldDelegate.gridColor != gridColor ||
-        oldDelegate.labelColor != labelColor;
-  }
 }
 
 class _HoverLift extends StatefulWidget {

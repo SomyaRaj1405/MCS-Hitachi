@@ -2,7 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../core/theme/app_theme.dart';
+import '../services/api_service.dart';
+import 'customer/customer_dashboard.dart';
 import 'login_screen.dart';
+import 'merchant/merchant_dashboard.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -45,11 +48,18 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) _controller.forward();
     });
 
-    _navigationTimer = Timer(const Duration(milliseconds: 2100), () {
+    _navigationTimer = Timer(const Duration(milliseconds: 2100), () async {
+      final restored = await ApiService.restoreSession();
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(
+          builder: (_) => !restored
+              ? const LoginScreen()
+              : ApiService.role == 'MERCHANT'
+              ? const MerchantDashboard()
+              : const CustomerDashboard(),
+        ),
       );
     });
   }

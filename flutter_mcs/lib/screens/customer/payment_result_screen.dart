@@ -6,12 +6,14 @@ import 'payment_screen.dart';
 class PaymentResultScreen extends StatefulWidget {
   final bool success;
   final Map<String, dynamic> bill;
+  final String? transactionId;
   final String? referenceNumber;
 
   const PaymentResultScreen({
     super.key,
     required this.success,
     required this.bill,
+    this.transactionId,
     this.referenceNumber,
   });
 
@@ -199,6 +201,15 @@ class _PaymentResultScreenState extends State<PaymentResultScreen>
                 const SizedBox(height: 14),
 
                 _detailRow('Merchant', widget.bill['merchantName'] ?? '—'),
+
+                if (widget.transactionId != null) ...[
+                  const SizedBox(height: 14),
+                  _detailRow(
+                    'Transaction ID',
+                    widget.transactionId!,
+                    mono: true,
+                  ),
+                ],
 
                 if (isSuccess && widget.referenceNumber != null) ...[
                   const SizedBox(height: 14),

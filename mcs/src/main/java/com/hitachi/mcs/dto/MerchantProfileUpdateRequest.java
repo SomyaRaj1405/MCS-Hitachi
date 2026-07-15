@@ -17,6 +17,9 @@ public class MerchantProfileUpdateRequest {
     @Email(message = "Email must be valid")
     private String email;
 
+    @Size(max = 150, message = "Business name must be at most 150 characters")
+    private String businessName;
+
     @Pattern(regexp = "^$|^[0-9]{10}$", message = "Phone must be exactly 10 digits")
     private String phone;
 }

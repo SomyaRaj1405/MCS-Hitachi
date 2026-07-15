@@ -182,6 +182,8 @@ class AppStatus {
       case 'FAILED':
       case 'DECLINED':
         return AppColors.error;
+      case 'REFUNDED':
+        return const Color(0xFF8B3A62);
       default: // PENDING
         return AppColors.warning;
     }
@@ -196,6 +198,8 @@ class AppStatus {
       case 'FAILED':
       case 'DECLINED':
         return AppColors.errorTint;
+      case 'REFUNDED':
+        return const Color(0xFFF4E8EE);
       default:
         return AppColors.warningTint;
     }
@@ -302,61 +306,24 @@ class McsMark extends StatelessWidget {
             : null,
       ),
       alignment: Alignment.center,
-      child: SizedBox.expand(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned(
-              right: size * 0.13,
-              bottom: size * 0.15,
-              child: CustomPaint(
-                size: Size(size * 0.30, size * 0.24),
-                painter: _McsCheckPainter(markColor),
-              ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: size * .12),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'MCS',
+            maxLines: 1,
+            style: TextStyle(
+              fontFamily: 'Arial',
+              fontSize: size * .42,
+              fontWeight: FontWeight.w900,
+              color: markColor,
+              letterSpacing: size * -.025,
+              height: 1,
             ),
-            Padding(
-              padding: EdgeInsets.only(bottom: size * 0.03),
-              child: Text(
-                'MCS',
-                style: GoogleFonts.poppins(
-                  fontSize: size * 0.31,
-                  fontWeight: FontWeight.w900,
-                  color: markColor,
-                  letterSpacing: -0.9,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
-  }
-}
-
-class _McsCheckPainter extends CustomPainter {
-  final Color color;
-
-  const _McsCheckPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.94)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.height * 0.22
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final path = Path()
-      ..moveTo(size.width * 0.08, size.height * 0.56)
-      ..lineTo(size.width * 0.36, size.height * 0.82)
-      ..lineTo(size.width * 0.92, size.height * 0.16);
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _McsCheckPainter oldDelegate) {
-    return oldDelegate.color != color;
   }
 }

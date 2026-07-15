@@ -1,0 +1,61 @@
+{"kind":"deck","id":"pr/1mmmwo","name":"Deck"}
+{"kind":"layout","layoutId":"1ba8643c-2554-46c8-8b0d-8c6603dae50b","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"3c9039ea-f914-4a9b-bf64-287d40a03d32","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/8ou0aa","slide":1,"title":"Payments that stay traceable","textShapes":3}
+{"kind":"textbox","id":"sh/0bqh4nul","slide":1,"name":"Title-3-1","text":"Payments that stay traceable","textPreview":"Payments that stay traceable","textChars":28,"textLines":1,"bbox":[41.33,182.55,992,261.57]}
+{"kind":"textbox","id":"sh/zah0bit0","slide":1,"name":"Subtitle-4-2","text":"End-to-end merchant billing, customer payment, settlement, refunds, reporting, and operational evidence.","textPreview":"End-to-end merchant billing, customer payment, settlement, refunds, reporting, and operational evidence.","textChars":104,"textLines":1,"bbox":[41.33,497.87,598.67,113.41]}
+{"kind":"textbox","id":"sh/y98z2xcf","slide":1,"name":"Subtitle-4-3","text":"MERCHANT COLLECTION SYSTEM","textPreview":"MERCHANT COLLECTION SYSTEM","textChars":26,"textLines":1,"bbox":[41.33,41.18,598.67,68.15]}
+{"kind":"notes","id":"nt/8ou0aa","slide":1,"text":""}
+{"kind":"slide","id":"sl/m2wayg","slide":2,"title":"2","textShapes":5}
+{"kind":"textbox","id":"sh/j6xk7i58","slide":2,"name":"Google-Shape-532-p58-2","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"textbox","id":"sh/476lgn6d","slide":2,"name":"Google-Shape-533-p58-3","text":"One workflow connects the full payment lifecycle","textPreview":"One workflow connects the full payment lifecycle","textChars":48,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/58f29sny","slide":2,"name":"Google-Shape-558-p61-4","text":"CREATE\nMerchants issue bills against real customer accounts.","textPreview":"CREATE | Merchants issue bills against real customer accounts.","textChars":60,"textLines":2,"bbox":[41.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/a14jatob","slide":2,"name":"Google-Shape-559-p61-5","text":"PAY\nCustomers authorize and settle pending bills securely.","textPreview":"PAY | Customers authorize and settle pending bills securely.","textChars":58,"textLines":2,"bbox":[453.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/v2dkjy5w","slide":2,"name":"Google-Shape-560-p61-6","text":"CONTROL\nOwners refund paid bills; reports use persisted status.","textPreview":"CONTROL | Owners refund paid bills; reports use persisted status.","textChars":63,"textLines":2,"bbox":[864.28,421.33,374.67,208]}
+{"kind":"shape","id":"sh/w36lc36h","slide":2,"name":"Google-Shape-561-p61-7","bbox":[449.33,355.1,33.13,37.15]}
+{"kind":"shape","id":"sh/x4f258n2","slide":2,"name":"Google-Shape-562-p61-8","bbox":[42.14,354.67,34.34,38.01]}
+{"kind":"shape","id":"sh/ex83mx4v","slide":2,"name":"Google-Shape-563-p61-9","bbox":[864.21,357.67,35.55,28.44]}
+{"kind":"notes","id":"nt/m2wayg","slide":2,"text":""}
+{"kind":"slide","id":"sl/hsryz3","slide":3,"title":"3","textShapes":8}
+{"kind":"textbox","id":"sh/7y5c7mdg","slide":3,"name":"Slide-Number-Placeholder-3-2","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"textbox","id":"sh/8zedgrel","slide":3,"name":"Title-10-3","text":"A three-stage transaction keeps state changes explicit","textPreview":"A three-stage transaction keeps state changes explicit","textChars":54,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"shape","id":"sh/t07u9wv6","slide":3,"name":"Google-Shape-2259-p159-4","bbox":[35.46,354.2,1285.61,0.03]}
+{"kind":"shape","id":"sh/u1gvihwr","slide":3,"name":"Google-Shape-2260-p159-5","bbox":[35.46,348.58,11.24,11.24]}
+{"kind":"shape","id":"sh/v2pcbmdc","slide":3,"name":"Google-Shape-2261-p159-6","bbox":[446.38,348.58,11.24,11.24]}
+{"kind":"shape","id":"sh/g3ydkrex","slide":3,"name":"Google-Shape-2262-p159-7","bbox":[858.38,348.58,11.24,11.24]}
+{"kind":"textbox","id":"sh/ho7udwvi","slide":3,"name":"Content-Placeholder-15-8","text":"INITIATE","textPreview":"INITIATE","textChars":8,"textLines":1,"bbox":[41.33,298.51,169.33,27.55]}
+{"kind":"textbox","id":"sh/a5cb6xwn","slide":3,"name":"Content-Placeholder-15-9","text":"AUTHORIZE","textPreview":"AUTHORIZE","textChars":9,"textLines":1,"bbox":[450.83,298.51,169.33,27.55]}
+{"kind":"textbox","id":"sh/b6lcz2d8","slide":3,"name":"Content-Placeholder-15-10","text":"SETTLE","textPreview":"SETTLE","textChars":6,"textLines":1,"bbox":[863.33,298.51,169.33,27.55]}
+{"kind":"textbox","id":"sh/jqpcbipw","slide":3,"name":"Text-Placeholder-16-11","text":"Make decision\n\nApprove or fail without falsely marking the bill paid.","textPreview":"Make decision |  | Approve or fail without falsely marking the bill paid.","textChars":69,"textLines":3,"bbox":[453.24,401.33,331.35,166.54]}
+{"kind":"textbox","id":"sh/ipgb2x8b","slide":3,"name":"Text-Placeholder-16-12","text":"Create intent\n\nBind bill, customer, merchant, and amount.","textPreview":"Create intent |  | Bind bill, customer, merchant, and amount.","textChars":57,"textLines":3,"bbox":[41.98,401.33,331.35,166.54]}
+{"kind":"textbox","id":"sh/5s7uds72","slide":3,"name":"Text-Placeholder-16-13","text":"Persist outcome\n\nCreate one settlement and update the bill to PAID.","textPreview":"Persist outcome |  | Create one settlement and update the bill to PAID.","textChars":67,"textLines":3,"bbox":[858.57,401.33,331.35,166.54]}
+{"kind":"notes","id":"nt/hsryz3","slide":3,"text":""}
+{"kind":"slide","id":"sl/a13u2f","slide":4,"title":"4","textShapes":9}
+{"kind":"shape","id":"sh/gvihkvmh","slide":4,"name":"Rounded-Rectangle-5-1","bbox":[41.33,317.33,374.67,312]}
+{"kind":"shape","id":"sh/fu9grqlw","slide":4,"name":"Rounded-Rectangle-6-2","bbox":[452.67,317.33,374.67,312]}
+{"kind":"shape","id":"sh/ut0zil4b","slide":4,"name":"Rounded-Rectangle-7-3","bbox":[864.28,317.33,374.67,312]}
+{"kind":"textbox","id":"sh/pkbyx03y","slide":4,"name":"Slide-Number-Placeholder-1-4","text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"textbox","id":"sh/oj2hofmt","slide":4,"name":"Title-2-5","text":"The release candidate is backed by measurable evidence","textPreview":"The release candidate is backed by measurable evidence","textChars":54,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/3i9gval8","slide":4,"name":"Content-Placeholder-9-6","text":"settled transaction lifecycles","textPreview":"settled transaction lifecycles","textChars":30,"textLines":1,"bbox":[73.74,514.5,309.67,86]}
+{"kind":"textbox","id":"sh/2h0zm54n","slide":4,"name":"Content-Placeholder-10-7","text":"p95 response time","textPreview":"p95 response time","textChars":17,"textLines":1,"bbox":[896.78,514.5,309.67,86]}
+{"kind":"textbox","id":"sh/5o7ylgnu","slide":4,"name":"Content-Placeholder-11-8","text":"benchmark failures","textPreview":"benchmark failures","textChars":18,"textLines":1,"bbox":[485.17,514.5,309.67,86]}
+{"kind":"textbox","id":"sh/knyxcbm9","slide":4,"name":"Content-Placeholder-9-9","text":"1,000","textPreview":"1,000","textChars":5,"textLines":1,"bbox":[73.74,360,308.67,142.71]}
+{"kind":"textbox","id":"sh/apkb6dw3","slide":4,"name":"Content-Placeholder-9-10","text":"0","textPreview":"0","textChars":1,"textLines":1,"bbox":[484.3,360,308.67,142.71]}
+{"kind":"textbox","id":"sh/vqtczixo","slide":4,"name":"Content-Placeholder-9-11","text":"7.48 ms","textPreview":"7.48 ms","textChars":7,"textLines":1,"bbox":[898.94,360,308.67,142.71]}
+{"kind":"textbox","id":"sh/wr2t8ne9","slide":4,"name":"Content-Placeholder-15-12","text":"VERIFICATION\nAutomated lifecycle and security checks run against an isolated H2 test profile. The scalability test exercises the HTTP boundary with MockMvc.","textPreview":"VERIFICATION | Automated lifecycle and security checks run against an isolated H2 test profile. The scalability test exercises the HTTP b...","textChars":156,"textLines":2,"bbox":[41.33,119.51,1197.33,167.92]}
+{"kind":"notes","id":"nt/a13u2f","slide":4,"text":""}
+{"kind":"slide","id":"sl/fijlkr","slide":5,"title":"5","textShapes":5}
+{"kind":"textbox","id":"sh/cvadw3qx","slide":5,"name":"Google-Shape-532-p58-2","text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"textbox","id":"sh/buhw3ypc","slide":5,"name":"Google-Shape-533-p58-3","text":"The handoff package is ready to operate and demonstrate","textPreview":"The handoff package is ready to operate and demonstrate","textChars":55,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/qt8vut8r","slide":5,"name":"Google-Shape-558-p61-4","text":"RUN\nREADME setup, schema, migration, seed, and local environment.","textPreview":"RUN | README setup, schema, migration, seed, and local environment.","textChars":65,"textLines":2,"bbox":[41.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/psze1o76","slide":5,"name":"Google-Shape-559-p61-5","text":"VERIFY\nBackend tests, Flutter tests, Postman acceptance, benchmark report.","textPreview":"VERIFY | Backend tests, Flutter tests, Postman acceptance, benchmark report.","textChars":74,"textLines":2,"bbox":[453.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/o7qdsjql","slide":5,"name":"Google-Shape-560-p61-6","text":"EXPLAIN\nUser guide, ER diagram, and this final demonstration deck.","textPreview":"EXPLAIN | User guide, ER diagram, and this final demonstration deck.","textChars":66,"textLines":2,"bbox":[864.28,421.33,374.67,208]}
+{"kind":"shape","id":"sh/36hczep0","slide":5,"name":"Google-Shape-561-p61-7","bbox":[449.33,355.1,33.13,37.15]}
+{"kind":"shape","id":"sh/258vqt8v","slide":5,"name":"Google-Shape-562-p61-8","bbox":[42.14,354.67,34.34,38.01]}
+{"kind":"shape","id":"sh/14zuxo7a","slide":5,"name":"Google-Shape-563-p61-9","bbox":[864.21,357.67,35.55,28.44]}
+{"kind":"notes","id":"nt/fijlkr","slide":5,"text":""}
+{"kind":"slide","id":"sl/zq4hyl","slide":6,"title":"Ready for the final demo","textShapes":3}
+{"kind":"textbox","id":"sh/upc3il4z","slide":6,"name":"Title-3-1","text":"Ready for the final demo","textPreview":"Ready for the final demo","textChars":24,"textLines":1,"bbox":[41.33,182.55,992,261.57]}
+{"kind":"textbox","id":"sh/hsn2t0na","slide":6,"name":"Subtitle-4-2","text":"Run the flow\nShow the evidence\nReview the controls","textPreview":"Run the flow | Show the evidence | Review the controls","textChars":50,"textLines":3,"bbox":[41.33,522.13,374.67,113.41]}
+{"kind":"textbox","id":"sh/wrelkvmp","slide":6,"name":"Subtitle-4-3","text":"MCS","textPreview":"MCS","textChars":3,"textLines":1,"bbox":[41.33,41.18,169.33,68.15]}
+{"kind":"notes","id":"nt/zq4hyl","slide":6,"text":""}

@@ -58,7 +58,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (authStatus == 'AUTHORIZED') {
         setState(() => _processingLabel = 'Settling transaction...');
 
-        await ApiService.post('/transactions/settle', {
+        final settleData = await ApiService.post('/transactions/settle', {
           'transactionId': transactionId,
         });
 
@@ -70,7 +70,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
             builder: (_) => PaymentResultScreen(
               success: true,
               bill: widget.bill,
-              referenceNumber: 'TXN-$transactionId',
+              transactionId: transactionId.toString(),
+              referenceNumber: settleData['settlementReference']?.toString(),
             ),
           ),
         );
@@ -83,6 +84,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             builder: (_) => PaymentResultScreen(
               success: false,
               bill: widget.bill,
+              transactionId: transactionId.toString(),
               referenceNumber: null,
             ),
           ),
@@ -97,6 +99,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           builder: (_) => PaymentResultScreen(
             success: false,
             bill: widget.bill,
+            transactionId: null,
             referenceNumber: null,
           ),
         ),

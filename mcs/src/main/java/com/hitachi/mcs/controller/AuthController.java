@@ -50,6 +50,6 @@ public class AuthController {
         String token = authHeader.replace("Bearer ", "");
         String email = authService.getEmailFromToken(token);
         String role = authService.getRoleFromToken(token);
-        return ResponseEntity.ok(authService.updateMerchantProfile(email, role, request));
+        return ResponseEntity.ok(authService.updateProfile(email, role, request));
     }
 }
